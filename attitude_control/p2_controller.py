@@ -25,5 +25,7 @@ class P2Controller:
         axis_err = np.array([q_err.q1, q_err.q2, q_err.q3])
 
         tau = -self.Pq * axis_err - self.Pw * omega
+        
+        tau = np.clip(tau, -4.0, 4.0)
 
         return tau, axis_err

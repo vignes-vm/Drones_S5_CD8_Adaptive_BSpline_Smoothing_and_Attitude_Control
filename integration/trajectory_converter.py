@@ -3,45 +3,76 @@ from attitude_control.quaternion import Quaternion
 
 class TrajectoryConverter:
 
-    def path_tangent_to_quaternion(self, tangent, up=None):
-        if up is None:
-            up = np.array([0, 0, 1])
+    def __init__(self):
+        self.prev_q_ref = None   # for smoothing
 
-        # Normalize tangent
+    def path_tangent_to_quaternion(self, tangent, up=None):
+
+        if up is None:
+            up = np.array([0.0, 0.0, 1.0])
+
         tangent_norm = np.linalg.norm(tangent)
         if tangent_norm < 1e-6:
-            return Quaternion()   # identity
+            return self.prev_q_ref if self.prev_q_ref else Quaternion()
 
+        # Drone x-axis points along path
         x_body = tangent / tangent_norm
 
-        # Handle case where tangent is parallel to up
-        if abs(np.dot(x_body, up)) > 0.99:
-            up = np.array([0, 1, 0])
+        # Avoid singularity when tangent parallel to up
+        if abs(np.dot(x_body, up)) > 0.95:
+            up = np.array([1.0, 0.0, 0.0])
 
-        # Build orthonormal frame
+        # Orthonormal frame
         y_body = np.cross(up, x_body)
-        y_body = y_body / np.linalg.norm(y_body)
+        y_norm = np.linalg.norm(y_body)
+        if y_norm < 1e-6:
+            return self.prev_q_ref if self.prev_q_ref else Quaternion()
+        y_body = y_body / y_norm
+
         z_body = np.cross(x_body, y_body)
         z_body = z_body / np.linalg.norm(z_body)
 
-        # Rotation matrix
+        # Build rotation matrix — columns are body axes in world frame
         R = np.column_stack([x_body, y_body, z_body])
 
-        # Convert to quaternion
-        return Quaternion.from_rotation_matrix(R)
+        # Ensure valid rotation matrix
+        if abs(np.linalg.det(R) - 1.0) > 0.01:
+            return self.prev_q_ref if self.prev_q_ref else Quaternion()
+
+        q_new = Quaternion.from_rotation_matrix(R)
+
+        # Ensure quaternion continuity — flip if needed to take
+        # shortest path from previous reference
+        if self.prev_q_ref is not None:
+            dot = np.dot(q_new.q, self.prev_q_ref.q)
+            if dot < 0:
+                q_new = Quaternion(-q_new.q0, -q_new.q1,
+                                   -q_new.q2, -q_new.q3)
+
+        self.prev_q_ref = q_new
+        return q_new
 
     def get_reference_at(self, spline, u):
+
         position = spline.evaluate(u)
         tangent  = spline.evaluate_derivative(u, 1)
-        q_ref    = self.path_tangent_to_quaternion(tangent)
+
+        # Smooth tangent — average with small window
+        h = 0.005
+        t1 = spline.evaluate_derivative(max(0.001, u - h), 1)
+        t2 = spline.evaluate_derivative(min(0.999, u + h), 1)
+        tangent_smooth = (t1 + tangent + t2) / 3.0
+
+        q_ref = self.path_tangent_to_quaternion(tangent_smooth)
         return position, q_ref
 
     def generate_time_sequence(self, spline,
-                               total_time=30.0,
+                               total_time=20.0,
                                dt=0.01):
 
         n_steps = int(total_time / dt)
-        params = np.linspace(0, 0.99, n_steps)
+        # Use slightly compressed range to avoid endpoint issues
+        params = np.linspace(0.001, 0.98, n_steps)
 
         sequence = []
         for i, u in enumerate(params):
