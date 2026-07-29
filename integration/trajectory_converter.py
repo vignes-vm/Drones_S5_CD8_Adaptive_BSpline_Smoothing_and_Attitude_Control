@@ -66,6 +66,9 @@ class TrajectoryConverter:
         q_ref = self.path_tangent_to_quaternion(tangent_smooth)
         return position, q_ref
 
+    def to_euler(self, q):
+        return q.to_euler()
+
     def generate_time_sequence(self, spline,
                                total_time=20.0,
                                dt=0.01):
