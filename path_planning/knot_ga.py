@@ -45,12 +45,16 @@ class KnotGA:
         except:
             return 1e6   # invalid chromosome
 
-        # Term 1 — Data fidelity
+        # Term 1 — Data fidelity (mean squared error, not summed —
+        # a raw sum scales with n_waypoints and, at this environment's
+        # scale, drowns out the curvature penalty term below by
+        # several orders of magnitude, making the GA blind to curvature)
         fidelity = 0
         for i, wp in enumerate(self.waypoints):
             u = spline.params[i]
             pt = spline.evaluate(u)
             fidelity += np.linalg.norm(wp - pt)**2
+        fidelity /= len(self.waypoints)
 
         # Term 2 — Curvature penalty
         params = np.linspace(0.01, 0.99, 50)
