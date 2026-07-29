@@ -3,15 +3,21 @@ from scipy.interpolate import BSpline as ScipyBSpline
 
 class BSplinePath:
 
-    def __init__(self, waypoints, knot_vector=None, degree=3):
+    def __init__(self, waypoints, knot_vector=None, degree=3,
+                 param_mode='chord', n_ctrl=None):
         self.waypoints = np.array(waypoints)
         self.degree = degree
         self.n_waypoints = len(waypoints)
+        self.param_mode = param_mode
 
-        self.params = self._chord_length_params()
+        if param_mode == 'uniform':
+            self.params = self._uniform_params()
+        else:
+            self.params = self._chord_length_params()
 
         if knot_vector is None:
-            self.knot_vector = self._uniform_knots()
+            target_n_ctrl = n_ctrl if n_ctrl is not None else self.n_waypoints
+            self.knot_vector = self._uniform_knots(target_n_ctrl)
         else:
             self.knot_vector = knot_vector
 
@@ -26,8 +32,11 @@ class BSplinePath:
             return np.linspace(0, 1, self.n_waypoints)
         return cumulative / total
 
-    def _uniform_knots(self):
-        n = self.n_waypoints
+    def _uniform_params(self):
+        return np.linspace(0, 1, self.n_waypoints)
+
+    def _uniform_knots(self, n_ctrl=None):
+        n = n_ctrl if n_ctrl is not None else self.n_waypoints
         k = self.degree
         n_knots = n + k + 1
         inner = np.linspace(0, 1, n_knots - 2*(k))
