@@ -69,8 +69,11 @@ sim = MergedSimulation(
     spline_adaptive,
     dt=0.01,
     total_time=20.0,
-    Pq=20.0,
-    Pw=4.0
+    Pq=0.2,   # Tuned down from Paper 2's Pq=20 — at this inertia
+    Pw=0.1    # (Ixx=Iyy=6.5e-4) and dt=0.01, Pq=20/Pw=4 is discrete-time
+              # unstable: torque saturates at +/-4Nm from floating-point
+              # noise alone and never recovers. Pq=0.2/Pw=0.1 is the
+              # largest stable gain pair found by sweeping in 0.05 steps.
 )
 results = sim.run(
     noise_std=0.1,
