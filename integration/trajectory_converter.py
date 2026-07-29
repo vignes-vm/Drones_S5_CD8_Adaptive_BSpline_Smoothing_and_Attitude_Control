@@ -85,3 +85,34 @@ class TrajectoryConverter:
                 'q_ref': q_ref
             })
         return sequence
+    
+    @staticmethod
+    def slerp_static(q1, q2, t):
+        """
+        Static slerp — no instance needed.
+        Smooth interpolation between two quaternions.
+        """
+        dot = np.dot(q1.q, q2.q)
+
+        if dot < 0:
+            q2  = Quaternion(-q2.q0, -q2.q1,
+                             -q2.q2, -q2.q3)
+            dot = -dot
+
+        dot = np.clip(dot, -1.0, 1.0)
+
+        if dot > 0.9995:
+            result = q1.q + t * (q2.q - q1.q)
+            norm   = np.linalg.norm(result)
+            return Quaternion(*(result / norm))
+
+        theta_0    = np.arccos(dot)
+        theta      = theta_0 * t
+        sin_t      = np.sin(theta)
+        sin_t0     = np.sin(theta_0)
+
+        s1 = np.cos(theta) - dot * sin_t / sin_t0
+        s2 = sin_t / sin_t0
+
+        result = s1 * q1.q + s2 * q2.q
+        return Quaternion(*result)
