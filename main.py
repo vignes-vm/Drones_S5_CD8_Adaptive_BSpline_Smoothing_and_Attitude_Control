@@ -1,5 +1,5 @@
 import matplotlib
-matplotlib.use('Agg')  # Fix macOS crash — MUST be first
+matplotlib.use('Agg')
 import matplotlib.pyplot as plt
 import numpy as np
 from mpl_toolkits.mplot3d import Axes3D
@@ -7,7 +7,6 @@ from mpl_toolkits.mplot3d import Axes3D
 from path_planning.bspline import BSplinePath
 from path_planning.knot_ga import KnotGA
 from integration.simulation_loop import MergedSimulation
-from attitude_control.quaternion import Quaternion
 
 # ════════════════════════════════════════
 # 1. Waypoints
@@ -52,7 +51,7 @@ SR_a = L_a / dist
 print(f"\n{'='*55}")
 print(f"PATH METRICS (Paper 1 Results)")
 print(f"{'='*55}")
-print(f"{'Method':<28} {'Length':>8} {'Max κ':>8} {'SR':>6}")
+print(f"{'Method':<28} {'Length':>8} {'Max_κ':>8} {'SR':>6}")
 print(f"{'-'*55}")
 print(f"{'Uniform B-Spline':<28} {L_u:>8.1f} "
       f"{k_u:>8.4f} {SR_u:>6.3f}")
@@ -70,24 +69,28 @@ sim = MergedSimulation(
     spline_adaptive,
     dt=0.01,
     total_time=20.0,
-    Pq=20.0,    # Paper 2 exact gains
+    Pq=20.0,
     Pw=4.0
 )
-results = sim.run(noise_std=0.1)  # Paper 2 noise level
+results = sim.run(
+    noise_std=0.1,
+    error_threshold=0.05,
+    u_step=0.005
+)
 
 # Extract results
-t        = np.array(results['t'])
-torque   = np.array(results['torque'])
-euler    = np.array(results['euler'])
-euler_r  = np.array(results['euler_ref'])
-axis_err = np.array(results['axis_error'])
-omega    = np.array(results['omega'])
-u_param  = np.array(results['u_param'])
-err_mag  = np.linalg.norm(axis_err, axis=1)
+t          = np.array(results['t'])
+euler      = np.array(results['euler'])
+euler_ref  = np.array(results['euler_ref'])
+axis_err   = np.array(results['axis_error'])
+torque     = np.array(results['torque'])
+omega      = np.array(results['omega'])
+u_param    = np.array(results['u_param'])
+err_mag    = np.array(results['err_mag'])
 
 # Unwrap angles
-eu = np.unwrap(euler,   axis=0)
-er = np.unwrap(euler_r, axis=0)
+eu = np.unwrap(euler,     axis=0)
+er = np.unwrap(euler_ref, axis=0)
 
 # ════════════════════════════════════════
 # 5. PLOT 1 — 3D Path Comparison
@@ -279,10 +282,9 @@ print("Saved: path_progress.png")
 # ════════════════════════════════════════
 # 12. Final Summary
 # ════════════════════════════════════════
-# Find convergence time (error < 0.05)
-conv_idx = np.where(err_mag < 0.05)[0]
-conv_time = t[conv_idx[0]] if len(conv_idx) > 0 else float('nan')
-steady_err = np.mean(err_mag[int(len(err_mag)*0.5):])
+conv_idx   = np.where(err_mag < 0.05)[0]
+conv_time  = t[conv_idx[0]] if len(conv_idx) > 0 else float('nan')
+steady_err = np.mean(err_mag[int(len(err_mag)*0.7):])
 
 print(f"\n{'='*55}")
 print(f"FINAL RESULTS SUMMARY")
@@ -301,8 +303,8 @@ print(f"  Controller gains:        Pq={sim.controller.Pq}, "
       f"Pω={sim.controller.Pw}")
 print(f"  Max torque applied:      "
       f"{np.max(np.abs(torque)):.3f} Nm")
-print(f"  Initial error:           {err_mag[0]:.4f}")
-print(f"  Convergence time:        ~{conv_time:.2f}s")
+print(f"  Convergence time:        "
+      f"{'~%.2fs' % conv_time if not np.isnan(conv_time) else 'never (did not converge)'}")
 print(f"  Steady-state error:      {steady_err:.5f}")
 print(f"  Final error:             {err_mag[-1]:.5f}")
 
@@ -310,4 +312,5 @@ print(f"\n[Merged] Integration:")
 print(f"  Attitude refs from path: YES (B-Spline tangent)")
 print(f"  Singularity-free:        YES (quaternion space)")
 print(f"  Simulation duration:     {t[-1]:.1f}s")
+print(f"  Final path progress:     {u_param[-1]*100:.1f}%")
 print(f"{'='*55}")
