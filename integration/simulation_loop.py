@@ -7,11 +7,11 @@ from attitude_control.quaternion import Quaternion
 class MergedSimulation:
     """
     Merged simulation — Paper 1 feeds references into Paper 2.
-    
+
     The B-Spline path generates a sequence of desired attitudes.
     The quaternion P² controller tracks those attitudes.
-    This directly mirrors Paper 2's simulation methodology
-    but with path-derived references instead of manual ones.
+    Path progress is error-gated: the path parameter only advances
+    once the current attitude error has converged below a threshold.
     """
 
     def __init__(self, spline, dt=0.01, total_time=20.0,
@@ -19,8 +19,9 @@ class MergedSimulation:
         self.spline      = spline
         self.dt          = dt
         self.total_time  = total_time
+        self.Pq          = Pq
+        self.Pw          = Pw
 
-        # Paper 2 gains exactly as specified
         self.drone       = QuadrotorModel()
         self.controller  = P2Controller(Pq=Pq, Pw=Pw)
         self.converter   = TrajectoryConverter()
@@ -34,72 +35,61 @@ class MergedSimulation:
             'axis_error': [],
             'torque':     [],
             'omega':      [],
-            'u_param':    []
+            'u_param':    [],
+            'err_mag':    []
         }
 
-    def generate_attitude_sequence(self):
+    def run(self, noise_std=0.1, error_threshold=0.05, u_step=0.005):
         """
-        Sample the B-Spline path and extract
-        desired attitude at each time step.
-        This is the bridge between Paper 1 and Paper 2.
+        Run attitude tracking simulation with error-gated path progress.
         """
         n_steps = int(self.total_time / self.dt)
-        # Map time linearly to path parameter
-        u_values = np.linspace(0.001, 0.98, n_steps)
-        sequence = []
-        for u in u_values:
-            _, q_ref = self.converter.get_reference_at(
-                self.spline, u
-            )
-            sequence.append((u, q_ref))
-        return sequence
 
-    def run(self, noise_std=0.1):
-        """
-        Run attitude tracking simulation.
-        noise_std=0.1 matches Paper 2 exactly.
-        """
-        print(f"Generating attitude reference sequence "
-              f"from B-Spline path...")
-        sequence = self.generate_attitude_sequence()
-        n_steps  = len(sequence)
+        u_current = 0.001
+        _, q_ref = self.converter.get_reference_at(
+            self.spline, u_current
+        )
+
+        # Initialize drone — start aligned with path start
+        self.drone.q = Quaternion(*q_ref.q)
+        q_ref_current = q_ref
 
         print(f"Running attitude controller simulation "
               f"for {self.total_time}s...")
 
-        # Initialize drone — start aligned with path start
-        _, q_init = self.converter.get_reference_at(
-            self.spline, 0.001
-        )
-        self.drone.reset()
-        self.drone.q = q_init
-
-        # Smooth reference tracker
-        q_ref_smooth = q_init
-
-        for i, (u, q_ref) in enumerate(sequence):
+        for i in range(n_steps):
             t = i * self.dt
-
-            # Smooth reference — prevents controller
-            # chasing instantaneous reference changes
-            alpha        = 0.04
-            q_ref_smooth = self.converter.slerp_static(
-                q_ref_smooth, q_ref, alpha
-            )
 
             # Current state with noise (Paper 2: noise=0.1)
             omega_noisy = (self.drone.omega
                           + np.random.normal(0, noise_std, 3))
 
+            # Compute error FIRST (before control)
+            q_err   = self.controller.compute_error(
+                q_ref_current, self.drone.q
+            )
+            err_mag = np.linalg.norm(
+                [q_err.q1, q_err.q2, q_err.q3]
+            )
+
+            # Advance path only once error has converged
+            if err_mag < error_threshold and u_current < 0.99:
+                u_current = min(u_current + u_step, 0.99)
+                _, q_ref_new = self.converter.get_reference_at(
+                    self.spline, u_current
+                )
+                q_ref_current = self.converter.slerp_static(
+                    q_ref_current, q_ref_new, 0.3
+                )
+
             # P² control law — Paper 2 Eq(21)
             tau, axis_err = self.controller.compute_torque(
-                q_ref_smooth,
+                q_ref_current,
                 self.drone.q,
                 omega_noisy
             )
 
             # Step attitude dynamics only
-            # (Paper 2 does this — attitude simulation)
             self.drone.step_attitude_only(tau, self.dt)
 
             # Log everything
@@ -107,24 +97,24 @@ class MergedSimulation:
             self.results['euler'].append(
                 self.drone.q.to_euler())
             self.results['euler_ref'].append(
-                q_ref_smooth.to_euler())
+                q_ref_current.to_euler())
             self.results['q_measured'].append(
                 self.drone.q.q.copy())
             self.results['q_ref'].append(
-                q_ref_smooth.q.copy())
+                q_ref_current.q.copy())
             self.results['axis_error'].append(
                 axis_err.copy())
             self.results['torque'].append(tau.copy())
             self.results['omega'].append(
                 self.drone.omega.copy())
-            self.results['u_param'].append(u)
+            self.results['u_param'].append(u_current)
+            self.results['err_mag'].append(err_mag)
 
             # Progress
             if i % (n_steps // 10) == 0:
-                pct     = 100 * i // n_steps
-                err_mag = np.linalg.norm(axis_err)
+                pct = 100 * i // n_steps
                 print(f"  {pct:3d}% | t={t:.1f}s | "
-                      f"u={u:.3f} | "
+                      f"u={u_current:.3f} | "
                       f"AttErr={err_mag:.4f} | "
                       f"τ_max={np.max(np.abs(tau)):.3f}Nm")
 
