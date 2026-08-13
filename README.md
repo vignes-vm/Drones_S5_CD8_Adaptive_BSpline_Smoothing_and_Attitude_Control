@@ -101,6 +101,8 @@ U = \{\underbrace{0,\dots,0}_{p+1},\ u_{p+1}^{*},\dots,u_{n}^{*},\ \underbrace{1
 \qquad u_{j+p}^{*} = \frac{1}{p}\sum_{i=j}^{j+p-1} u_i
 ```
 
+**Implementation note:** MATLAB's `bspline_engine.m` uses knot averaging as its default constructor path (`knot_averaging`). On the Python side, `path_planning/bspline.py`'s `BSplinePath` falls back to a **uniform** interior knot vector when no explicit `knot_vector` is passed; the Piegl & Tiller averaging formula above is instead implemented as a standalone helper (`chord_length_knot_vector`, duplicated in `paper1_recreation.py` and `validation_tests.py`) used to build the "Classical B-Spline (chord-length)" comparison method and passed into `BSplinePath` explicitly.
+
 ### 3.3 Basis functions — Cox–de Boor recursion
 
 ```math
@@ -123,6 +125,8 @@ C(u_k) = \sum_{j=0}^{n} N_{j,p}(u_k)\, Q_j = P_k, \qquad k = 0,\dots,n
 \mathbf{N}\,\mathbf{Q} = \mathbf{P} \quad\Longrightarrow\quad \mathbf{Q} = \mathbf{N}^{-1}\mathbf{P}
 ```
 
+In practice this is solved as a least-squares normal-equations system (`np.linalg.lstsq` on `NᵀN`, `NᵀP`) rather than a literal matrix inverse, so it degrades gracefully instead of throwing on a near-singular `N`. The curve interpolates every waypoint exactly only when the number of control points equals the number of waypoints (the default); callers that pass a smaller `n_ctrl` (e.g. `validation_tests.py` uses `n_ctrl=14` to give Uniform/Classical/Adaptive splines the same control-point budget) get a least-squares **approximation** instead of an exact fit.
+
 ### 3.5 Curvature
 
 Curvature is evaluated numerically from the first and second derivatives of `C(u)` (central differences, step `h`):
@@ -133,17 +137,34 @@ Curvature is evaluated numerically from the first and second derivatives of `C(u
 
 ### 3.6 Adaptive knot placement via Genetic Algorithm
 
-The classical knot-averaging vector is used as a baseline; the GA searches only the **interior knots**, bounded within `±0.15` of their baseline position (keeps them sorted ⇒ Schoenberg–Whitney holds by construction), minimizing:
+The GA searches only the **interior knots**; the two implementations differ in how the search space and cost are set up:
+
+**MATLAB** (`part1_bspline/knot_ga.m`, via `optimoptions('ga', ...)`): interior knots are bounded within `±0.15` of the classical knot-averaging baseline (keeps them sorted ⇒ Schoenberg–Whitney holds by construction), minimizing
 
 ```math
 \text{cost}(U) = L(U) + 1000 \cdot \max\!\big(0,\ \kappa_{max}(U) - \kappa_{limit}\big)^2
 ```
 
-where `L(U)` is arc length (numerically integrated over 500 samples) and `κ_max(U)` is the peak curvature of the resulting spline. The quadratic penalty makes any knot arrangement that violates the curvature limit `κ_limit` (default `0.5 m⁻¹`) strictly worse than a compliant but slightly longer path.
+where `L(U)` is arc length and `κ_max(U)` is the peak curvature of the resulting spline. The quadratic penalty makes any knot arrangement that violates the curvature limit `κ_limit` (default `0.5 m⁻¹`) strictly worse than a compliant but slightly longer path.
+
+**Python** (`path_planning/knot_ga.py`, via `pygad`): interior knots are searched over a fixed absolute range `[0.01, 0.99]` (not bounded relative to the averaging baseline), sorted after optimization to keep the knot vector valid. The fitness is a 4-term weighted cost, minimized by maximizing its negative:
+
+```math
+\text{cost}(U) = w_1 \cdot \text{MSE}(U) + w_2 \cdot \text{curv\_penalty}(U) + w_3 \cdot L(U) + w_4 \cdot \text{knot\_reg}(U)
+```
+
+| Term | Weight (default) | Meaning |
+|---|---:|---|
+| `MSE(U)` | `w1 = 1.0` | mean-squared data-fidelity error between the spline and the original waypoints (mean, not sum, so it doesn't scale with waypoint count and drown out the curvature term) |
+| `curv_penalty(U)` | `w2 = 2.0` | `Σ max(0, κ(u) − κ_max)²` sampled at 50 points along `u ∈ [0.01, 0.99]` |
+| `L(U)` | `w3 = 1.0` | arc length, sampled at 200 points |
+| `knot_reg(U)` | `w4 = 0.5` | sum-of-squared deviation of interior knot spacing from its mean, discouraging clustered knots |
+
+`kappa_max` defaults to `0.5 m⁻¹` (`KnotGA.__init__`) but callers tune it to the environment's actual curvature scale — e.g. `validation_tests.py` uses `kappa_max=0.05` since achieved curvatures there (~0.003–0.04 m⁻¹) never approach the paper's default.
 
 ```mermaid
 flowchart LR
-    B0["Baseline knots\n(averaging)"] --> Pop["Initial GA population\n(perturbed interior knots)"]
+    B0["Baseline knots\n(averaging, MATLAB only)"] --> Pop["Initial GA population\n(interior knots)"]
     Pop --> Fit["Fit B-Spline per\ncandidate knot vector"]
     Fit --> Eval["cost = length + curvature penalty"]
     Eval --> Sel{Converged /\nmax generations?}
@@ -151,6 +172,21 @@ flowchart LR
     Sel -- yes --> Best["Best interior knots"]
     Best --> Final["Final adaptive\nB-Spline path"]
 ```
+
+### 3.7 Local curvature-aware control-point refinement
+
+The paper's algorithm (§3.4) is three stages, not two: (1) initialization, (2) GA knot optimization, and (3) a **separate local-search pass that directly moves control points** wherever curvature still exceeds `κ_max` after the GA — shifting each offending control point `d_i` to reduce `‖C'(u) × C''(u)‖` (paper §3.3). The GA's fitness function only *penalizes* curvature when choosing knots; it never touches control-point positions directly, so stage 3 is not redundant with it.
+
+This stage 3 was missing from both implementations — `path_planning/curvature_refine.py` was an empty placeholder — and has now been implemented on the Python side (`CurvatureRefiner`, in the same file). MATLAB's `bspline_engine.m`/`knot_ga.m` still lack it (see §9).
+
+`CurvatureRefiner.refine(spline)` repeats, up to `max_iters` times:
+1. Sample curvature at 200 points; find the single worst violation (`κ(u) > κ_max`).
+2. Identify which control points influence that `u` (degree-`k` basis `i` has support on `[t_i, t_{i+k+1})`, so up to `k+1 = 4` control points for a cubic spline).
+3. For each, estimate `∇κ` at the worst `u` via central finite differences and step the control point against the gradient (a derivative-free local search, matching the paper's "gradient descent or derivative-free algorithm" language).
+4. Keep the move only if it actually lowered curvature there; otherwise revert and shrink the step size.
+5. Stop when no sample exceeds `κ_max`, or after `max_iters`.
+
+`path_planning/path_smoother.py`'s new `AdaptiveBSplineSmoother` class chains all three stages (`stage1_spline` → `stage2_spline` → `stage3_spline`) behind one `.smooth(waypoints)` call; `main.py` now uses it instead of calling `KnotGA` directly. At the default `kappa_max=0.5 m⁻¹`, stage 3 is a no-op for this repo's waypoint sets (as already noted in §9, achieved curvatures here are ~0.003–0.04 m⁻¹) — it only visibly kicks in when `kappa_max` is tightened below the GA-optimized spline's peak curvature.
 
 ### Recreated results (Table 2 of Paper 1)
 
@@ -243,15 +279,17 @@ u_{k+1} = \begin{cases} \min(u_k + \Delta u,\ u_{hi}) & \lVert \vec{q}_{err}\rVe
 ## 6. Repository Layout
 
 ```
-path_planning/       3D A* planner, B-Spline path (SciPy-backed), GA knot optimizer
+path_planning/       3D A* planner, B-Spline path (pure NumPy Cox-de Boor), GA knot optimizer
 attitude_control/    Quaternion algebra, quadrotor rigid-body dynamics, P² controller
-environment/         3D obstacle environment (boxes/spheres) used by A*
+environment/         3D obstacle environment (cylinders/cuboids) used by A*
 integration/         Merges path planning output into attitude references + sim loop
 visualization/       Shared plotting helpers
 matlab/uav_matlab/   Parallel MATLAB implementation (parts 1-4) with animations
 results/             Generated figures from the Python scripts
 results/presentation/ Polished figures for review/presentation use
 ```
+
+`path_planning/bspline.py` imports `scipy.interpolate.BSpline` but does not currently use it — basis evaluation is a hand-written recursive Cox–de Boor implementation.
 
 ### Top-level scripts (Python)
 
@@ -286,7 +324,7 @@ part4_environment/     astar_3d.m, obstacle_env.m, run_part4_full.m, run_phase4_
 pip install numpy scipy matplotlib pygad
 ```
 
-A `.venv` with these dependencies already installed is included in this repo for convenience.
+(No `requirements.txt` is checked in yet — install the four packages above directly.)
 
 **MATLAB** — Global Optimization Toolbox (for `ga`), no other toolboxes required.
 
@@ -327,7 +365,10 @@ run_phase4_dense        % part4_environment — dense obstacle field variant
 - **Controller gains**: Paper 2's exact gains (`Pq=20`, `Pw=4`) are discrete-time unstable at `dt=0.01` given this project's low rotational inertia (`Ixx=Iyy=6.5e-4`). `paper2_recreation.py`, `final_simulation.py`, and `test_paper2_controller.py` integrate the control law and physics internally at `dt=0.0005` (2 kHz) while logging at the paper's own `dt=0.01` resolution. `main.py`'s merged simulation instead uses a reduced, empirically stable gain pair (`Pq=0.2`, `Pw=0.1`) at `dt=0.01`.
 - **Path progress gating**: in the merged simulation, the path parameter `u` only advances once the current attitude tracking error has converged below a threshold, so the drone doesn't outrun its own attitude controller.
 - **Curvature constraint**: the GA knot optimizer (`path_planning/knot_ga.py`) searches interior knot placement to keep the B-Spline's maximum curvature under a configurable `kappa_max`, evaluated against path length and straightness ratio.
+- **`n_inner_knots` / `kappa_max` vary per script**: `KnotGA` defaults to `n_inner_knots=8, kappa_max=0.5`, but callers override both to fit their scenario — `main.py`/`generate_presentation_plots.py` use `n_inner_knots=6, kappa_max=0.5`; `validation_tests.py` uses `n_inner_knots=10, kappa_max=0.05` (tightened because that script's A\*-derived paths only reach curvatures of ~0.003–0.04 m⁻¹, so the paper's default `kappa_max` would never trigger the penalty).
 - **Numerical conditioning**: knot averaging (§3.2) is what keeps the basis matrix `N` well-conditioned; `bspline_engine` warns if `cond(N) > 1e8`, which typically means the knot vector and parameter values have fallen out of sync (Schoenberg–Whitney violated).
+- **Local curvature refinement is Python-only so far** (§3.7): `path_planning/curvature_refine.py` implements the paper's stage-3 control-point refinement and `main.py` now runs the full 3-stage pipeline via `AdaptiveBSplineSmoother`. MATLAB's `bspline_engine.m`/`knot_ga.m` still only implement stages 1–2 (init + GA), so the two implementations are no longer at parity on this point — porting the refinement to MATLAB is open work.
+- **Missing `Fdyn` term**: the paper's objective (Eq. 4, §2.4) has 5 terms including a velocity/acceleration ("dynamic feasibility") penalty `Fdyn`. Neither the Python nor MATLAB GA cost function implements it — both are missing that term entirely (Python has 4 terms, MATLAB effectively 2 — see §3.6).
 
 ---
 

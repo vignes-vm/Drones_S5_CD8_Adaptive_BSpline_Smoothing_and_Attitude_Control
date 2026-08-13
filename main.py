@@ -5,7 +5,7 @@ import numpy as np
 from mpl_toolkits.mplot3d import Axes3D
 
 from path_planning.bspline import BSplinePath
-from path_planning.knot_ga import KnotGA
+from path_planning.path_smoother import AdaptiveBSplineSmoother
 from integration.simulation_loop import MergedSimulation
 
 # ════════════════════════════════════════
@@ -23,22 +23,23 @@ waypoints = np.array([
 ], dtype=float)
 
 # ════════════════════════════════════════
-# 2. GA Knot Optimization (Paper 1)
+# 2. Full 3-stage adaptive smoothing (Paper 1 §3.4):
+#    1. Initialization — baseline spline (below, for comparison)
+#    2. GA knot optimization
+#    3. Curvature-aware control-point refinement
 # ════════════════════════════════════════
-ga = KnotGA(
-    waypoints,
+smoother = AdaptiveBSplineSmoother(
     n_inner_knots=6,
     n_generations=30,
     population_size=20,
     kappa_max=0.5
 )
-best_knots = ga.run()
+spline_adaptive = smoother.smooth(waypoints)
 
 # ════════════════════════════════════════
-# 3. Build Splines
+# 3. Baseline for comparison
 # ════════════════════════════════════════
-spline_uniform  = BSplinePath(waypoints)
-spline_adaptive = BSplinePath(waypoints, best_knots)
+spline_uniform = BSplinePath(waypoints)
 
 L_u  = spline_uniform.path_length()
 L_a  = spline_adaptive.path_length()
