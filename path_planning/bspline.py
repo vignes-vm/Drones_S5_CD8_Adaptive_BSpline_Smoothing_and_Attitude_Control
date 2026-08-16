@@ -1,5 +1,8 @@
 import numpy as np
-from scipy.interpolate import BSpline as ScipyBSpline
+try:
+    from scipy.interpolate import BSpline as ScipyBSpline
+except ImportError:
+    ScipyBSpline = None
 
 class BSplinePath:
 
