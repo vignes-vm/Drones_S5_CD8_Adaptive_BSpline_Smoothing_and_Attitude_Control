@@ -1,0 +1,27 @@
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "drones-s5-cd8-adaptive-bspline-attitude-control"
+version = "1.0.0"
+description = "Integrated UAV navigation stack fusing GA-optimized adaptive B-Spline path smoothing with singularity-free quaternion P^2 attitude control"
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = [
+    "numpy>=1.24.0",
+    "scipy>=1.10.0",
+    "matplotlib>=3.7.0",
+    "pygad>=3.0.0",
+]
+
+[project.optional-dependencies]
+test = [
+    "pytest>=7.3.0",
+    "pytest-cov>=4.0.0",
+]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+python_files = ["test_*.py"]
+addopts = "-v --tb=short"
