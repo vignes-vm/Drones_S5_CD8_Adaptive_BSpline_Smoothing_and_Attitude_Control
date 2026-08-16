@@ -77,19 +77,33 @@ class Quaternion:
 
     @staticmethod
     def from_rotation_matrix(R):
-        # Convert 3x3 rotation matrix to quaternion
+        # Convert 3x3 rotation matrix to unit quaternion using Shepperd's algorithm
+        R = np.asarray(R, dtype=float)
         trace = R[0,0] + R[1,1] + R[2,2]
-        if trace > 0:
-            s = 0.5 / np.sqrt(trace + 1.0)
-            q0 = 0.25 / s
-            q1 = (R[2,1] - R[1,2]) * s
-            q2 = (R[0,2] - R[2,0]) * s
-            q3 = (R[1,0] - R[0,1]) * s
+        if trace > 0.0:
+            s = 2.0 * np.sqrt(trace + 1.0)
+            q0 = 0.25 * s
+            q1 = (R[2,1] - R[1,2]) / s
+            q2 = (R[0,2] - R[2,0]) / s
+            q3 = (R[1,0] - R[0,1]) / s
+        elif (R[0,0] > R[1,1]) and (R[0,0] > R[2,2]):
+            s = 2.0 * np.sqrt(1.0 + R[0,0] - R[1,1] - R[2,2])
+            q0 = (R[2,1] - R[1,2]) / s
+            q1 = 0.25 * s
+            q2 = (R[0,1] + R[1,0]) / s
+            q3 = (R[0,2] + R[2,0]) / s
+        elif R[1,1] > R[2,2]:
+            s = 2.0 * np.sqrt(1.0 + R[1,1] - R[0,0] - R[2,2])
+            q0 = (R[0,2] - R[2,0]) / s
+            q1 = (R[0,1] + R[1,0]) / s
+            q2 = 0.25 * s
+            q3 = (R[1,2] + R[2,1]) / s
         else:
-            q0 = 0.5 * np.sqrt(max(0, 1 + R[0,0] - R[1,1] - R[2,2]))
-            q1 = 0.5 * np.sqrt(max(0, 1 - R[0,0] + R[1,1] - R[2,2]))
-            q2 = 0.5 * np.sqrt(max(0, 1 - R[0,0] - R[1,1] + R[2,2]))
-            q3 = 0.5 * np.sqrt(max(0, 1 + R[0,0] + R[1,1] + R[2,2]))
+            s = 2.0 * np.sqrt(1.0 + R[2,2] - R[0,0] - R[1,1])
+            q0 = (R[1,0] - R[0,1]) / s
+            q1 = (R[0,2] + R[2,0]) / s
+            q2 = (R[1,2] + R[2,1]) / s
+            q3 = 0.25 * s
         return Quaternion(q0, q1, q2, q3)
 
     def error(self, q_ref):
