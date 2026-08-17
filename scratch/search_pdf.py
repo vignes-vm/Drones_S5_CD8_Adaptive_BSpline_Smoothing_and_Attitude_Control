@@ -1,7 +1,7 @@
 import pypdf
 import sys
 
-reader = pypdf.PdfReader("../bspline1.pdf")
+reader = pypdf.PdfReader("bspline1.pdf")
 print(f"Total pages: {len(reader.pages)}")
 
 keywords = ["eq. 4", "equation 4", "fdyn", "f_dyn", "feasibility", "dynamic"]
@@ -15,4 +15,5 @@ for i, page in enumerate(reader.pages):
             lines = text.split("\n")
             for line in lines:
                 if kw in line.lower():
-                    print("  ", line.strip())
+                    clean_line = line.strip().encode('ascii', 'ignore').decode('ascii')
+                    print("  ", clean_line)
