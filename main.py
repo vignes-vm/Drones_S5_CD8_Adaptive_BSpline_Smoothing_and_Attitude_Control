@@ -52,7 +52,7 @@ SR_a = L_a / dist
 print(f"\n{'='*55}")
 print(f"PATH METRICS (Paper 1 Results)")
 print(f"{'='*55}")
-print(f"{'Method':<28} {'Length':>8} {'Max_κ':>8} {'SR':>6}")
+print(f"{'Method':<28} {'Length':>8} {'Max_kappa':>8} {'SR':>6}")
 print(f"{'-'*55}")
 print(f"{'Uniform B-Spline':<28} {L_u:>8.1f} "
       f"{k_u:>8.4f} {SR_u:>6.3f}")

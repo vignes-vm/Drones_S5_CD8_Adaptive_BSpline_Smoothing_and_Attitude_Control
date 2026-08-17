@@ -95,13 +95,13 @@ def run_scenario(name, start, goal, n_cyl, n_cub, seed=42, notes=""):
         'SR':     spline_adaptive.path_length() / dist,
     }
 
-    print(f"\n{'Method':<20} {'Length(m)':<10} {'Max κ(m⁻¹)':<11} {'SR'}")
+    print(f"\n{'Method':<20} {'Length(m)':<10} {'Max kappa(m^-1)':<15} {'SR'}")
     print("-" * 50)
     names = {'baseline': 'Baseline', 'uniform': 'Uniform',
              'chord': 'Classical', 'adaptive': 'Adaptive'}
     for key in ['baseline', 'uniform', 'chord', 'adaptive']:
         m = metrics[key]
-        print(f"{names[key]:<20} {m['length']:<10.1f} {m['kappa']:<11.4f} {m['SR']:.3f}")
+        print(f"{names[key]:<20} {m['length']:<10.1f} {m['kappa']:<15.4f} {m['SR']:.3f}")
 
     len_improve = ((metrics['uniform']['length'] - metrics['adaptive']['length'])
                    / metrics['uniform']['length'] * 100)

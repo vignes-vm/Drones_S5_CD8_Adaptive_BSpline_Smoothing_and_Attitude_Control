@@ -155,11 +155,11 @@ results_stage3['adaptive'] = {
 names = {'baseline': 'Baseline Polyline', 'uniform': 'Uniform B-Spline',
          'chord': 'Classical B-Spline', 'adaptive': 'Adaptive B-Spline'}
 
-print(f"\n{'Method':<20} {'Length(m)':<10} {'Max κ(m⁻¹)':<11} {'Time(s)':<9} {'SR'}")
+print(f"\n{'Method':<20} {'Length(m)':<10} {'Max kappa(m^-1)':<15} {'Time(s)':<9} {'SR'}")
 print("-" * 55)
 for key in ['baseline', 'uniform', 'chord', 'adaptive']:
     r = results_stage3[key]
-    print(f"{names[key]:<20} {r['length']:<10.1f} {r['kappa']:<11.4f} "
+    print(f"{names[key]:<20} {r['length']:<10.1f} {r['kappa']:<15.4f} "
           f"{r['time']:<9.2f} {r['SR']:.3f}")
 
 fig = plt.figure(figsize=(13, 10))

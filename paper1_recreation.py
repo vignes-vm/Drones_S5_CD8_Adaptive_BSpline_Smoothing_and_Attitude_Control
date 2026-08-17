@@ -156,13 +156,13 @@ if __name__ == '__main__':
     print("\n" + "=" * 55)
     print("Table 2: Performance of Four Path-Smoothing Methods")
     print("=" * 55)
-    print(f"{'Method':<20} {'Length(m)':<10} {'Max κ(m⁻¹)':<11} "
+    print(f"{'Method':<20} {'Length(m)':<10} {'Max kappa(m^-1)':<15} "
           f"{'Time(s)':<9} {'SR'}")
     print("-" * 55)
     for m in methods:
         a = avg[m]
         print(f"{display_names[m]:<20} {a['length']:<10.1f} "
-              f"{a['kappa']:<11.2f} {a['time']:<9.2f} {a['SR']:.3f}")
+              f"{a['kappa']:<15.2f} {a['time']:<9.2f} {a['SR']:.3f}")
     print("=" * 55)
 
     print("Paper Reference Values:")
