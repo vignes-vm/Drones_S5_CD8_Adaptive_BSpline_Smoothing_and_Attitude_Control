@@ -52,7 +52,7 @@ SR_a = L_a / dist
 print(f"\n{'='*55}")
 print(f"PATH METRICS (Paper 1 Results)")
 print(f"{'='*55}")
-print(f"{'Method':<28} {'Length':>8} {'Max_κ':>8} {'SR':>6}")
+print(f"{'Method':<28} {'Length':>8} {'Max_kappa':>8} {'SR':>6}")
 print(f"{'-'*55}")
 print(f"{'Uniform B-Spline':<28} {L_u:>8.1f} "
       f"{k_u:>8.4f} {SR_u:>6.3f}")
@@ -295,16 +295,18 @@ print(f"FINAL RESULTS SUMMARY")
 print(f"{'='*55}")
 print(f"\n[Paper 1] Path Planning:")
 print(f"  Path length reduction:   "
-      f"{L_u:.1f}m → {L_a:.1f}m "
+      f"{L_u:.1f}m -> {L_a:.1f}m "
       f"({(L_u-L_a)/L_u*100:.1f}% shorter)")
-print(f"  Max curvature (uniform): {k_u:.4f} m⁻¹")
-print(f"  Max curvature (adaptive):{k_a:.4f} m⁻¹")
+print(f"  Max curvature (uniform): {k_u:.4f} m^-1")
+print(f"  Max curvature (adaptive):{k_a:.4f} m^-1")
 print(f"  Straightness ratio:      "
-      f"{SR_u:.3f} → {SR_a:.3f} (closer to 1.0 = better)")
+      f"{SR_u:.3f} -> {SR_a:.3f} (closer to 1.0 = better)")
+
 
 print(f"\n[Paper 2] Attitude Control:")
 print(f"  Controller gains:        Pq={sim.controller.Pq}, "
-      f"Pω={sim.controller.Pw}")
+      f"Pw={sim.controller.Pw}")
+
 print(f"  Max torque applied:      "
       f"{np.max(np.abs(torque)):.3f} Nm")
 print(f"  Convergence time:        "
