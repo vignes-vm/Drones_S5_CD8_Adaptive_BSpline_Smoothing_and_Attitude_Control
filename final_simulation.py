@@ -273,7 +273,7 @@ for i in range(n_log):
     if i % (n_log // 10) == 0:
         pct = 100 * i // n_log
         print(f"  {pct:3d}% | t={t:5.1f}s | u={u_current:.3f} | "
-              f"AttErr={err_mag:.4f} | τ_max={np.max(np.abs(tau)):.3f}Nm")
+              f"AttErr={err_mag:.4f} | tau_max={np.max(np.abs(tau)):.3f}Nm")
 
 conv_idx  = np.where(err_mag_arr < ERR_THRESH)[0]
 conv_time = t_arr[conv_idx[0]] if len(conv_idx) > 0 else float('nan')

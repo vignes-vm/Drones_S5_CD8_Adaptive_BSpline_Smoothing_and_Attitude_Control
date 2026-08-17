@@ -48,6 +48,41 @@ class QuadrotorModel:
         self.applied_torque  = np.zeros(3)
         self.motor_saturated = False
 
+    def step_6dof(self, tau, total_thrust, dt, f_dist=None, tau_dist=None):
+        """
+        Integrate full 6-DOF rigid-body dynamics (translational + rotational).
+        
+        Translational EOM:
+            m * acceleration = R(q) * [0, 0, F_thrust]^T - [0, 0, m*g]^T + f_dist
+        Rotational EOM:
+            I * omega_dot = tau - omega x (I * omega) + tau_dist
+        """
+        # Step rotational dynamics (updates self.q, self.omega, self.applied_torque, self.motor_speeds)
+        self.step_attitude_only(tau, dt, total_thrust=total_thrust, tau_dist=tau_dist)
+
+        # Actual applied thrust (from motor model if enabled, else total_thrust)
+        if self.enable_motor_model:
+            applied_thrust = self.motor_model.compute_thrust_and_torques(self.motor_speeds)[0]
+        else:
+            applied_thrust = float(total_thrust) if total_thrust is not None else (self.mass * self.g)
+
+        # Thrust vector in body frame: [0, 0, F]
+        thrust_body = np.array([0.0, 0.0, applied_thrust])
+        R = self.q.to_rotation_matrix()
+        thrust_world = R @ thrust_body
+
+        gravity = np.array([0.0, 0.0, -self.mass * self.g])
+
+        force_total = thrust_world + gravity
+        if f_dist is not None:
+            force_total += np.asarray(f_dist, dtype=float)
+
+        accel = force_total / self.mass
+
+        # Euler / Semi-implicit integration for translation
+        self.velocity += accel * dt
+        self.position += self.velocity * dt
+
     def step_attitude_only(self, tau, dt, total_thrust=None, tau_dist=None):
         """
         Integrate rotational dynamics using RK4 integration.
@@ -94,4 +129,4 @@ class QuadrotorModel:
 
         self.q = Quaternion(*new_q)
         self.q.normalize()
-        self.omega = new_w
+        self.omega = new_w

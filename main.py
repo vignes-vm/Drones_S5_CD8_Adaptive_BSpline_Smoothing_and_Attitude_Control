@@ -295,16 +295,18 @@ print(f"FINAL RESULTS SUMMARY")
 print(f"{'='*55}")
 print(f"\n[Paper 1] Path Planning:")
 print(f"  Path length reduction:   "
-      f"{L_u:.1f}m → {L_a:.1f}m "
+      f"{L_u:.1f}m -> {L_a:.1f}m "
       f"({(L_u-L_a)/L_u*100:.1f}% shorter)")
-print(f"  Max curvature (uniform): {k_u:.4f} m⁻¹")
-print(f"  Max curvature (adaptive):{k_a:.4f} m⁻¹")
+print(f"  Max curvature (uniform): {k_u:.4f} m^-1")
+print(f"  Max curvature (adaptive):{k_a:.4f} m^-1")
 print(f"  Straightness ratio:      "
-      f"{SR_u:.3f} → {SR_a:.3f} (closer to 1.0 = better)")
+      f"{SR_u:.3f} -> {SR_a:.3f} (closer to 1.0 = better)")
+
 
 print(f"\n[Paper 2] Attitude Control:")
 print(f"  Controller gains:        Pq={sim.controller.Pq}, "
-      f"Pω={sim.controller.Pw}")
+      f"Pw={sim.controller.Pw}")
+
 print(f"  Max torque applied:      "
       f"{np.max(np.abs(torque)):.3f} Nm")
 print(f"  Convergence time:        "
