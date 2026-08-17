@@ -95,7 +95,7 @@ def run_scenario(name, start, goal, n_cyl, n_cub, seed=42, notes=""):
         'SR':     spline_adaptive.path_length() / dist,
     }
 
-    print(f"\n{'Method':<20} {'Length(m)':<10} {'Max κ(m⁻¹)':<11} {'SR'}")
+    print(f"\n{'Method':<20} {'Length(m)':<10} {'Max_kappa':<11} {'SR'}")
     print("-" * 50)
     names = {'baseline': 'Baseline', 'uniform': 'Uniform',
              'chord': 'Classical', 'adaptive': 'Adaptive'}

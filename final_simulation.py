@@ -155,7 +155,7 @@ results_stage3['adaptive'] = {
 names = {'baseline': 'Baseline Polyline', 'uniform': 'Uniform B-Spline',
          'chord': 'Classical B-Spline', 'adaptive': 'Adaptive B-Spline'}
 
-print(f"\n{'Method':<20} {'Length(m)':<10} {'Max κ(m⁻¹)':<11} {'Time(s)':<9} {'SR'}")
+print(f"\n{'Method':<20} {'Length(m)':<10} {'Max_kappa':<11} {'Time(s)':<9} {'SR'}")
 print("-" * 55)
 for key in ['baseline', 'uniform', 'chord', 'adaptive']:
     r = results_stage3[key]

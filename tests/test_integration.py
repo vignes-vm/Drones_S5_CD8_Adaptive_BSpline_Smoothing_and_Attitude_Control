@@ -43,6 +43,25 @@ class TestIntegration(unittest.TestCase):
         self.assertIsInstance(q_ref, Quaternion)
         self.assertTrue(np.isclose(np.linalg.norm(q_ref.q), 1.0))
 
+    def test_merged_simulation_6dof_mode(self):
+        from integration.simulation_loop import MergedSimulation
+        waypoints = np.array([
+            [0.0, 0.0, 20.0],
+            [100.0, 50.0, 40.0],
+            [200.0, 100.0, 60.0]
+        ])
+        spline = BSplinePath(waypoints)
+        sim = MergedSimulation(spline, dt=0.01, total_time=1.0)
+        results = sim.run(mode='6dof')
+
+        self.assertIn('position', results)
+        self.assertIn('thrust', results)
+        self.assertEqual(len(results['position']), int(1.0 / 0.01))
+        # Initial position should be close to initial reference position
+        self.assertTrue(np.allclose(results['position'][0], results['position_ref'][0], atol=1.0))
+
+
 
 if __name__ == '__main__':
     unittest.main()
+
