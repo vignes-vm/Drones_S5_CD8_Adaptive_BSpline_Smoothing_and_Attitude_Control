@@ -140,7 +140,7 @@ $$
 The GA searches the interior knots to minimize a weighted cost combining data fidelity, curvature violation, path length, and knot regularity:
 
 $$
-\text{cost}(U) = w_1 \cdot \text{MSE}(U) + w_2 \cdot \text{curv\_penalty}(U) + w_3 \cdot L(U) + w_4 \cdot \text{knot\_reg}(U)
+\text{cost}(U) = w_1 \cdot \text{MSE}(U) + w_2 \cdot \text{curvPenalty}(U) + w_3 \cdot L(U) + w_4 \cdot \text{knotReg}(U)
 $$
 
 | Term | Weight (default) | Meaning |
