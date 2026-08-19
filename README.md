@@ -145,10 +145,10 @@ $$
 
 | Term | Weight (default) | Meaning |
 |---|---:|---|
-| $\text{MSE}(U)$ | $w_1 = 1.0$ | data-fidelity error between the spline and the original waypoints |
-| $\text{curv\_penalty}(U)$ | $w_2 = 2.0$ | $\sum \max(0, \kappa(u) - \kappa_{max})^2$ sampled along the spline |
-| $L(U)$ | $w_3 = 1.0$ | arc length |
-| $\text{knot\_reg}(U)$ | $w_4 = 0.5$ | discourages clustered interior knots |
+| `MSE(U)` | $w_1 = 1.0$ | data-fidelity error between the spline and the original waypoints |
+| `curv_penalty(U)` | $w_2 = 2.0$ | $\sum \max(0, \kappa(u) - \kappa_{max})^2$ sampled along the spline |
+| `L(U)` | $w_3 = 1.0$ | arc length |
+| `knot_reg(U)` | $w_4 = 0.5$ | discourages clustered interior knots |
 
 ### 4.6 Local curvature-aware control-point refinement
 
