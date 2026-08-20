@@ -189,15 +189,15 @@ $$
 
 | Term | Definition | What it does |
 |---|---|---|
-| $\mathcal{F}_{data}(C)$ | sum of squared Euclidean distances between each raw point $p_i$ and its closest point on $C(u)$ | **Data Fidelity** — keeps the smoothed path from drifting away from the route the global planner/sensors actually reported |
-| $\mathcal{F}_{curv}(C)$ | integral of the squared curvature $\kappa(C(u))^2$ along the path | **Curvature Penalty** — discourages sharp turns, reducing mechanical stress and keeping the path inside the UAV's maneuverability envelope |
-| $\mathcal{F}_{dyn}(C)$ | penalizes deviations from, or violations of, soft limits on velocity magnitude $\lVert C'(u)\rVert$ and acceleration magnitude $\lVert C''(u)\rVert$ | **Dynamic Feasibility Penalty** — keeps the trajectory inside the UAV's flight envelope for speed and acceleration |
-| $\mathcal{F}_{len}(C)$ | total arc length of $C(u)$ | **Path Length** — shorter paths save flight time and energy, provided smoothness/safety are not sacrificed |
-| $\mathcal{F}_{knot}(U)$ | penalizes overly dense knot clusters (overfitting/complexity) or excessively sparse spacing (underrepresented features), e.g. via variance of inter-knot spacing | **Knot Distribution Regularization** — keeps $U$ well-behaved, adapting knot density to local trajectory complexity without unnecessary complexity |
+| `F_data(C)` | sum of squared Euclidean distances between each raw point $p_i$ and its closest point on $C(u)$ | **Data Fidelity** — keeps the smoothed path from drifting away from the route the global planner/sensors actually reported |
+| `F_curv(C)` | integral of the squared curvature $\kappa(C(u))^2$ along the path | **Curvature Penalty** — discourages sharp turns, reducing mechanical stress and keeping the path inside the UAV's maneuverability envelope |
+| `F_dyn(C)` | penalizes deviations from, or violations of, soft limits on velocity magnitude $\lVert C'(u)\rVert$ and acceleration magnitude $\lVert C''(u)\rVert$ | **Dynamic Feasibility Penalty** — keeps the trajectory inside the UAV's flight envelope for speed and acceleration |
+| `F_len(C)` | total arc length of $C(u)$ | **Path Length** — shorter paths save flight time and energy, provided smoothness/safety are not sacrificed |
+| `F_knot(U)` | penalizes overly dense knot clusters (overfitting/complexity) or excessively sparse spacing (underrepresented features), e.g. via variance of inter-knot spacing | **Knot Distribution Regularization** — keeps $U$ well-behaved, adapting knot density to local trajectory complexity without unnecessary complexity |
 
 The non-negative scalar weights $w_1,\dots,w_5$ tailor the objective to mission requirements (e.g. higher $w_1, w_2$ for sensor-stability-critical surveillance; higher $w_4$ for time-critical search-and-rescue), turning the multi-objective problem into a single-objective one that a genetic algorithm or gradient-free optimizer can solve directly.
 
-**Implemented (practical) cost.** This project's genetic-algorithm cost, `path_planning/knot_ga.py`, implements a 4-term subset of Eq. 4 — $\mathcal{F}_{data}$, $\mathcal{F}_{curv}$, $\mathcal{F}_{len}$, and $\mathcal{F}_{knot}$ — and folds $\mathcal{F}_{dyn}$'s role into the hard curvature limit $\kappa_{max}$ enforced by $\mathcal{F}_{curv}$ and the local refinement pass of §4.8, rather than optimizing a separate soft velocity/acceleration penalty:
+**Implemented (practical) cost.** This project's genetic-algorithm cost, `path_planning/knot_ga.py`, implements a 4-term subset of Eq. 4 — `F_data`, `F_curv`, `F_len`, and `F_knot` — and folds `F_dyn`'s role into the hard curvature limit `kappa_max` enforced by `F_curv` and the local refinement pass of §4.8, rather than optimizing a separate soft velocity/acceleration penalty:
 
 $$
 \text{cost}(U) = w_1 \cdot \text{MSE}(U) + w_2 \cdot \text{curvPenalty}(U) + w_3 \cdot L(U) + w_4 \cdot \text{knotReg}(U)
@@ -205,10 +205,10 @@ $$
 
 | Code term | Weight (default) | Maps to Eq. 4 term | What it is | Formulation |
 |---|---:|---|---|---|
-| `MSE(U)` | $w_1 = 1.0$ | $\mathcal{F}_{data}$ | **Data fidelity** — how far the fitted spline drifts from the original waypoints | $\text{MSE}(U) = \dfrac{1}{n}\sum_{i=1}^{n} \lVert p_i - C(u_i) \rVert^2$, where $u_i$ is waypoint $p_i$'s own fitted parameter (fixed correspondence, not a nearest-point search on $C$) |
-| `curv_penalty(U)` | $w_2 = 2.0$ | $\mathcal{F}_{curv}$ | **Curvature violation** — how hard/how often the spline turns sharper than the airframe allows | $\text{curvPenalty}(U) = \displaystyle\sum_{j=1}^{50} \max\!\big(0,\ \kappa(u_j) - \kappa_{max}\big)^2$, sampled at 50 points $u_j \in [0.01, 0.99]$ |
-| `L(U)` | $w_3 = 1.0$ | $\mathcal{F}_{len}$ | **Path length** — total flight distance along the spline | $L(U) = \displaystyle\sum_{j=1}^{N-1} \lVert C(u_{j+1}) - C(u_j) \rVert$, with $N = 200$ sample points |
-| `knot_reg(U)` | $w_4 = 0.5$ | $\mathcal{F}_{knot}$ | **Knot regularity** — whether interior knots are evenly spread vs. clustered | $\text{knotReg}(U) = \displaystyle\sum_{i} \big(\Delta u_i - \overline{\Delta u}\big)^2$, where $\Delta u_i = u_{i+1}-u_i$ are the interior-knot gaps (a sum of squared deviations, not divided by count) |
+| `MSE(U)` | $w_1 = 1.0$ | `F_data` | **Data fidelity** — how far the fitted spline drifts from the original waypoints | $\text{MSE}(U) = \dfrac{1}{n}\sum_{i=1}^{n} \lVert p_i - C(u_i) \rVert^2$, where $u_i$ is waypoint $p_i$'s own fitted parameter (fixed correspondence, not a nearest-point search on $C$) |
+| `curv_penalty(U)` | $w_2 = 2.0$ | `F_curv` | **Curvature violation** — how hard/how often the spline turns sharper than the airframe allows | $\text{curvPenalty}(U) = \displaystyle\sum_{j=1}^{50} \max\!\big(0,\ \kappa(u_j) - \kappa_{max}\big)^2$, sampled at 50 points $u_j \in [0.01, 0.99]$ |
+| `L(U)` | $w_3 = 1.0$ | `F_len` | **Path length** — total flight distance along the spline | $L(U) = \displaystyle\sum_{j=1}^{N-1} \lVert C(u_{j+1}) - C(u_j) \rVert$, with $N = 200$ sample points |
+| `knot_reg(U)` | $w_4 = 0.5$ | `F_knot` | **Knot regularity** — whether interior knots are evenly spread vs. clustered | $\text{knotReg}(U) = \displaystyle\sum_{i} \big(\Delta u_i - \overline{\Delta u}\big)^2$, where $\Delta u_i = u_{i+1}-u_i$ are the interior-knot gaps (a sum of squared deviations, not divided by count) |
 
 ### 4.6 Adaptive Knot Vector Selection via Genetic Algorithm
 
