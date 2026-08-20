@@ -95,8 +95,6 @@ $$
 h(n) = \lVert (n - n_{goal}) \cdot r \rVert_2
 $$
 
-where $\Delta \in \{-1,0,1\}^3 \setminus \{0\}$ is the step to a neighboring voxel, and $h(n)$ is the Euclidean distance (admissible on a 3D grid).
-
 where:
 
 - $f(n)$ — the **total estimated cost** of the cheapest path from start to goal that passes through node $n$. This is the value A\* ranks the search frontier by, always expanding the lowest-$f(n)$ node next.
@@ -125,24 +123,26 @@ Given a sequence of raw track points $\{p_0, p_1, \dots, p_N\}$, $p_i \in \mathb
 Waypoints $\{p_0, \dots, p_n\}$ are assigned parameter values $u_i$ by **chord-length parameterization**, so that segments proportional to their spatial length occupy proportional shares of the parameter domain:
 
 $$
-u_0 = 0, \qquad u_i = u_{i-1} + \frac{\lVert p_i - p_{i-1} \rVert}{\sum_{j=1}^{n}\lVert p_j - p_{j-1} \rVert}, \qquad u_n = 1
+u_i = u_{i-1} + \frac{\lVert p_i - p_{i-1} \rVert}{\sum_{j=1}^{n}\lVert p_j - p_{j-1} \rVert}
 $$
+
+with boundary values $u_0 = 0$ and $u_n = 1$.
 
 ### 4.3 B-Spline Representation (paper §2.2, Eq. 1)
 
 For a cubic B-Spline ($k = 3$), each coordinate of the trajectory is represented as
 
 $$
-C(u) = \sum_{i=0}^{m} d_i\, N_{i,k}(u), \qquad u_{min} \le u \le u_{max} \tag{1}
+C(u) = \sum_{i=0}^{m} d_i\, N_{i,k}(u)
 $$
 
-where:
+valid over $u_{min} \le u \le u_{max}$ (paper's Eq. 1), where:
 
 - $D = \{d_0, \dots, d_m\}$, $d_i \in \mathbb{R}^d$ — the **control points**, obtained here by a least-squares fit (§4.7) rather than direct interpolation. They determine the overall shape and position of the curve.
 - $N_{i,k}(u)$ — the **B-Spline basis functions** of degree $k$, given by the Cox–de Boor recursion:
 
 $$
-N_{i,0}(u) = \begin{cases} 1 & u_i \le u < u_{i+1} \\ 0 & \text{otherwise} \end{cases}
+N_{i,0}(u) = 1 \text{ for } u_i \le u < u_{i+1}\text{, and } 0 \text{ otherwise}
 $$
 
 $$
@@ -158,14 +158,22 @@ $D$ (control points) and $U$ (knot vector) are the paper's two primary **decisio
 The smoothed trajectory must respect the platform's physical limits. The **curvature constraint** bounds turn sharpness to the airframe's aerodynamic/structural limit $\kappa_{max}$:
 
 $$
-\kappa(C(u)) = \frac{\lVert C'(u) \times C''(u) \rVert}{\lVert C'(u) \rVert^{3}} \le \kappa_{max} \tag{2}
+\kappa(C(u)) = \frac{\lVert C'(u) \times C''(u) \rVert}{\lVert C'(u) \rVert^{3}} \le \kappa_{max}
 $$
+
+(paper's Eq. 2)
 
 The **velocity and acceleration bounds** reflect the maximum speed and acceleration the propulsion/control surfaces can support without jeopardizing stability:
 
 $$
-\lVert C'(u) \rVert \le v_{max}, \qquad \lVert C''(u) \rVert \le a_{max} \tag{3}
+\lVert C'(u) \rVert \le v_{max}
 $$
+
+$$
+\lVert C''(u) \rVert \le a_{max}
+$$
+
+(paper's Eq. 3)
 
 (Curvature is evaluated numerically here from the spline's analytic first and second derivatives.) The paper additionally requires the curve to stay in free space around known obstacles — enforced in this project via the buffered A\* grid upstream — and notes that missions may impose boundary conditions (fixed start/end velocity or heading).
 
@@ -174,8 +182,10 @@ $$
 The paper aggregates the competing criteria — fidelity, flight-constraint compliance, and minimal abrupt maneuvering — into a single weighted cost:
 
 $$
-\mathcal{J}(D, U) = w_1 \mathcal{F}_{data}(C) + w_2 \mathcal{F}_{curv}(C) + w_3 \mathcal{F}_{dyn}(C) + w_4 \mathcal{F}_{len}(C) + w_5 \mathcal{F}_{knot}(U) \tag{4}
+\mathcal{J}(D, U) = w_1 \mathcal{F}_{data}(C) + w_2 \mathcal{F}_{curv}(C) + w_3 \mathcal{F}_{dyn}(C) + w_4 \mathcal{F}_{len}(C) + w_5 \mathcal{F}_{knot}(U)
 $$
+
+(paper's Eq. 4)
 
 | Term | Paper's definition | What it does |
 |---|---|---|
@@ -213,10 +223,10 @@ Each GA chromosome encodes a candidate knot vector $U = \{u_0, u_1, \dots, u_{m+
 Control points $d_i$ are recovered for a given knot vector by solving the linear interpolation system built from the basis matrix $N_{i,k}(u_j)$:
 
 $$
-C(u_j) = \sum_{i=0}^{m} N_{i,k}(u_j)\, d_i = p_j, \qquad j = 0,\dots,n
+C(u_j) = \sum_{i=0}^{m} N_{i,k}(u_j)\, d_i = p_j
 $$
 
-solved as a least-squares normal-equations system so it degrades gracefully instead of failing on a near-singular basis matrix — matching the paper's "least-squares initialization" step of §3.3.
+for $j = 0,\dots,n$, solved as a least-squares normal-equations system so it degrades gracefully instead of failing on a near-singular basis matrix — matching the paper's "least-squares initialization" step of §3.3.
 
 ### 4.8 Curvature-Aware Control-Point Refinement (paper §3.3)
 
@@ -229,9 +239,9 @@ The paper compares smoothing methods using four metrics, which this project's co
 | Metric | Paper's definition | Interpretation |
 |---|---|---|
 | **Path Length** | $L = \sum_{i=1}^{N-1} \lVert x_{i+1} - x_i \rVert$, over consecutive waypoints/sampled spline points $\{x_i\}$ | shorter is generally preferable, provided smoothness is maintained |
-| **Maximum Curvature** | $\kappa(u) = \dfrac{\lVert C'(u)\times C''(u)\rVert}{\lVert C'(u)\rVert^3}$, sampled at multiple points along the trajectory (Eq. 2) | lower $\kappa_{max}$ means more stable flight, less aerodynamic stress |
+| **Maximum Curvature** | $\kappa(u) = \frac{\lVert C'(u)\times C''(u)\rVert}{\lVert C'(u)\rVert^3}$, sampled at multiple points along the trajectory (Eq. 2) | lower $\kappa_{max}$ means more stable flight, less aerodynamic stress |
 | **Computation Time** | wall-clock time to construct, evaluate, and iteratively refine the spline | matters for near-real-time / on-board re-planning |
-| **Straightness Ratio** | $SR = \dfrac{L}{\lVert x_{goal} - x_{start}\rVert}$ | $SR = 1.0$ is a perfectly straight, obstacle-free path; $SR > 1.0$ reflects detours around obstacles |
+| **Straightness Ratio** | $SR = \frac{L}{\lVert x_{goal} - x_{start}\rVert}$ | $SR = 1.0$ is a perfectly straight, obstacle-free path; $SR > 1.0$ reflects detours around obstacles |
 
 The four methods compared, matching the paper's baselines: **Baseline Polyline** (raw, unsmoothed A\* output), **Uniform B-Spline** (uniformly spaced knots), **Classical B-Spline** (fixed, chord-length knots), and the **Proposed Enhanced Adaptive B-Spline** (GA knot placement + curvature-aware refinement, §4.5–4.8).
 
@@ -251,8 +261,10 @@ The four methods compared, matching the paper's baselines: **Baseline Polyline**
 With $q = [q_0, q_1, q_2, q_3]^T$ the unit attitude quaternion and $\omega$ the body angular rate:
 
 $$
-\dot{q} = \tfrac{1}{2}\, q \otimes \begin{bmatrix}0\\ \omega\end{bmatrix}
+\dot{q} = \tfrac{1}{2}\, q \otimes (0,\ \omega)
 $$
+
+where $(0,\ \omega)$ denotes the pure quaternion with zero scalar part and vector part $\omega$.
 
 ### 5.2 Rigid-body rotational dynamics
 
@@ -265,18 +277,20 @@ where $I = \text{diag}(I_{xx}, I_{yy}, I_{zz})$ is the body inertia tensor and $
 ### 5.3 Quaternion attitude error
 
 $$
-q_{err} = q_{ref} \otimes q_{meas}^{-1}, \qquad q_{meas}^{-1} = \bar{q}_{meas} = [q_0,-q_1,-q_2,-q_3]^T
+q_{err} = q_{ref} \otimes q_{meas}^{-1}
 $$
+
+where $q_{meas}^{-1} = \bar{q}_{meas} = [q_0,-q_1,-q_2,-q_3]^T$ is the quaternion conjugate (equal to the inverse since $q_{meas}$ is unit norm).
 
 The scalar part is forced positive (flip sign if $q_{err,0} < 0$) to always take the shortest rotational path, avoiding the double-cover singularity of the quaternion group.
 
 ### 5.4 P² control law
 
 $$
-\tau = -P_q\, \vec{q}_{err} - P_\omega\, \omega, \qquad \vec{q}_{err} = [q_{err,1}, q_{err,2}, q_{err,3}]^T
+\tau = -P_q\, \vec{q}_{err} - P_\omega\, \omega
 $$
 
-saturated element-wise to $\pm \tau_{max}$. This cascades an outer attitude-error loop (gain $P_q$) directly onto an inner angular-rate damping loop (gain $P_\omega$) — no separate rate-loop integrator, no Euler-angle singularities.
+where $\vec{q}_{err} = [q_{err,1}, q_{err,2}, q_{err,3}]^T$ is the vector part of the error quaternion, saturated element-wise to $\pm \tau_{max}$. This cascades an outer attitude-error loop (gain $P_q$) directly onto an inner angular-rate damping loop (gain $P_\omega$) — no separate rate-loop integrator, no Euler-angle singularities.
 
 ```mermaid
 flowchart LR
@@ -297,10 +311,10 @@ flowchart LR
 The B-Spline's local tangent $C'(u)$ is converted into a reference attitude by building an orthonormal frame (tangent plus two axes derived from a reference "up" vector) and reading off the quaternion of the resulting rotation matrix. The controller drives the vehicle's actual quaternion toward that reference, and the path parameter $u$ is advanced only while tracking error stays under a threshold $\varepsilon$:
 
 $$
-u_{k+1} = \begin{cases} \min(u_k + \Delta u,\ u_{hi}) & \lVert \vec{q}_{err}\rVert < \varepsilon \\ u_k & \text{otherwise} \end{cases}
+u_{k+1} = \min(u_k + \Delta u,\ u_{hi})
 $$
 
-This couples guidance and control into one gated loop rather than running them as independent stages.
+if $\lVert \vec{q}_{err}\rVert < \varepsilon$; otherwise $u_{k+1} = u_k$ (hold position and keep correcting). This couples guidance and control into one gated loop rather than running them as independent stages.
 
 # Results
 
