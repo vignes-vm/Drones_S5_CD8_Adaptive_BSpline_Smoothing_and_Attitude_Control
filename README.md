@@ -8,7 +8,7 @@
 
 | S. No. | Name | Roll Number | Email |
 |---|---|---|---|
-| 1 | Aparna A | cb.sc.u4aie24212 | cb.sc.u4aie24212@cb.students.amrita.edu |
+| 1 | Aparna A | cb.sc.u4aie24206 | cb.sc.u4aie24206@cb.students.amrita.edu |
 | 2 | G Prajwal Priyadarshan | cb.sc.u4aie24214 | cb.sc.u4aie24214@cb.students.amrita.edu |
 | 3 | Kabilan K | cb.sc.u4aie24224 | cb.sc.u4aie24224@cb.students.amrita.edu |
 | 4 | Kesav Satya Sai Nimmagadda | cb.sc.u4aie24236 | cb.sc.u4aie24236@cb.students.amrita.edu |
