@@ -84,12 +84,18 @@ The environment is a `2000 × 2000 × 500 m` volume populated with cylinders (to
 **A\* cost model**, on a 26-connected voxel grid of resolution `r`:
 
 $$
-\begin{aligned}
-f(n) &= g(n) + h(n) \\[4pt]
-g(n) &= g(\text{parent}) + \lVert \Delta \rVert \cdot r, & \Delta \in \{-1,0,1\}^3 \setminus \{0\} \\[4pt]
-h(n) &= \lVert (n - n_{goal}) \cdot r \rVert_2 & \text{(Euclidean, admissible on a 3D grid)}
-\end{aligned}
+f(n) = g(n) + h(n)
 $$
+
+$$
+g(n) = g(\text{parent}) + \lVert \Delta \rVert \cdot r
+$$
+
+$$
+h(n) = \lVert (n - n_{goal}) \cdot r \rVert_2
+$$
+
+where $\Delta \in \{-1,0,1\}^3 \setminus \{0\}$ is the step to a neighboring voxel, and $h(n)$ is the Euclidean distance (admissible on a 3D grid).
 
 where:
 
