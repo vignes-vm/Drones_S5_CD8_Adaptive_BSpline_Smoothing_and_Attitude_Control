@@ -284,6 +284,27 @@ where $q_{meas}^{-1} = \bar{q}_{meas} = [q_0,-q_1,-q_2,-q_3]^T$ is the quaternio
 
 The scalar part is forced positive (flip sign if $q_{err,0} < 0$) to always take the shortest rotational path, avoiding the double-cover singularity of the quaternion group.
 
+### 5.4 P² control law
+
+$$
+\tau = -P_q\, \vec{q}_{err} - P_\omega\, \omega
+$$
+
+where $\vec{q}_{err} = [q_{err,1}, q_{err,2}, q_{err,3}]^T$ is the vector part of the error quaternion, saturated element-wise to $\pm \tau_{max}$. This cascades an outer attitude-error loop (gain $P_q$) directly onto an inner angular-rate damping loop (gain $P_\omega$) — no separate rate-loop integrator, no Euler-angle singularities.
+
+```mermaid
+flowchart LR
+    Qref["q_ref (desired attitude)"] --> Err["Quaternion error: q_ref x conj(q_meas)"]
+    Qmeas["q_meas (estimated attitude)"] --> Err
+    Err --> Pq["-Pq * q_err(1:3)"]
+    Omega["omega (angular rate)"] --> Pw["-Pw * omega"]
+    Pq --> Sum(("+")) --> Sat["Saturate +-tau_max"]
+    Pw --> Sum
+    Sat --> Tau["tau (torque)"]
+    Tau --> RB["Rigid body: I*wdot = tau - w x (Iw)"]
+    RB --> RK4["RK4 integration + quaternion renorm"]
+    RK4 --> Qmeas
+```
 
 ## 6. Merged Pipeline — Path-Following Attitude Control
 
