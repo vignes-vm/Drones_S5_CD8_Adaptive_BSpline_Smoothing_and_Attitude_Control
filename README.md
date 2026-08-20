@@ -203,12 +203,12 @@ $$
 \text{cost}(U) = w_1 \cdot \text{MSE}(U) + w_2 \cdot \text{curvPenalty}(U) + w_3 \cdot L(U) + w_4 \cdot \text{knotReg}(U)
 $$
 
-| Code term | Weight (default) | Maps to paper term | Computed as |
-|---|---:|---|---|
-| `MSE(U)` | $w_1 = 1.0$ | $\mathcal{F}_{data}$ | mean (not summed, to keep scale-comparable to the other terms) squared distance between each waypoint and the fitted spline |
-| `curv_penalty(U)` | $w_2 = 2.0$ | $\mathcal{F}_{curv}$ | $\sum \max(0, \kappa(u) - \kappa_{max})^2$, sampled along the spline |
-| `L(U)` | $w_3 = 1.0$ | $\mathcal{F}_{len}$ | arc length of $C(u)$ |
-| `knot_reg(U)` | $w_4 = 0.5$ | $\mathcal{F}_{knot}$ | variance of inter-knot spacing — discourages clustered interior knots |
+| Code term | Weight (default) | Maps to paper term | What it is | Formulation |
+|---|---:|---|---|---|
+| `MSE(U)` | $w_1 = 1.0$ | $\mathcal{F}_{data}$ | **Data fidelity** — how far the fitted spline drifts from the original waypoints | $\text{MSE}(U) = \dfrac{1}{n}\sum_{i=1}^{n} \lVert p_i - C(u_i) \rVert^2$, where $u_i$ is waypoint $p_i$'s own fitted parameter (fixed correspondence, not a nearest-point search on $C$) |
+| `curv_penalty(U)` | $w_2 = 2.0$ | $\mathcal{F}_{curv}$ | **Curvature violation** — how hard/how often the spline turns sharper than the airframe allows | $\text{curvPenalty}(U) = \displaystyle\sum_{j=1}^{50} \max\!\big(0,\ \kappa(u_j) - \kappa_{max}\big)^2$, sampled at 50 points $u_j \in [0.01, 0.99]$ |
+| `L(U)` | $w_3 = 1.0$ | $\mathcal{F}_{len}$ | **Path length** — total flight distance along the spline | $L(U) = \displaystyle\sum_{j=1}^{N-1} \lVert C(u_{j+1}) - C(u_j) \rVert$, with $N = 200$ sample points |
+| `knot_reg(U)` | $w_4 = 0.5$ | $\mathcal{F}_{knot}$ | **Knot regularity** — whether interior knots are evenly spread vs. clustered | $\text{knotReg}(U) = \displaystyle\sum_{i} \big(\Delta u_i - \overline{\Delta u}\big)^2$, where $\Delta u_i = u_{i+1}-u_i$ are the interior-knot gaps (a sum of squared deviations, not divided by count) |
 
 ### 4.6 Adaptive Knot Vector Selection via Genetic Algorithm (paper §3.2)
 
