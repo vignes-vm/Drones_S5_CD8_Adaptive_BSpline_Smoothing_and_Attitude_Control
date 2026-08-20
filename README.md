@@ -2,7 +2,7 @@
   <img src="Images/logo-branding-amrita-universiy-2024.jpg" alt="Amrita Vishwa Vidyapeetham" width="900">
 </p>
 
-# Adaptive B-Spline Smoothing and Altitude Control of a Quadrotor UAV
+# Adaptive B-Spline Smoothing and Attitude Control of a Quadrotor UAV
 
 ## Team Members
 
