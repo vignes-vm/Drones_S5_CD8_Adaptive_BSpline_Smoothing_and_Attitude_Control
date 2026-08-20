@@ -303,7 +303,7 @@ $$
 saturated element-wise to `±tau_max`. This cascades an outer attitude-error loop (gain `Pq`) directly onto an inner angular-rate damping loop (gain `Pw`) — no separate rate-loop integrator, no Euler-angle singularities.
 
 ```mermaid
-flowchart LR
+flowchart TD
     Qref["q_ref (desired attitude)"] --> Err["Quaternion error: q_ref x conj(q_meas)"]
     Qmeas["q_meas (estimated attitude)"] --> Err
     Err --> Pq["-Pq * q_err(1:3)"]
