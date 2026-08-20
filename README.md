@@ -197,7 +197,7 @@ $$
 
 The non-negative scalar weights $w_1,\dots,w_5$ tailor the objective to mission requirements (e.g. higher $w_1, w_2$ for sensor-stability-critical surveillance; higher $w_4$ for time-critical search-and-rescue), turning the multi-objective problem into a single-objective one that a genetic algorithm or gradient-free optimizer can solve directly.
 
-**Implemented (practical) cost.** This project's genetic-algorithm cost, `path_planning/knot_ga.py`, implements a 4-term subset of Eq. 4 — $\mathcal{F}_{data}$, $\mathcal{F}_{curv}$, $\mathcal{F}_{len}$, and $\mathcal{F}_{knot}$ — and folds $\mathcal{F}_{dyn}$'s role into the hard curvature limit $\kappa_{max}$ enforced by $\mathcal{F}_{curv}$ and the local refinement pass of §4.7, rather than optimizing a separate soft velocity/acceleration penalty:
+**Implemented (practical) cost.** This project's genetic-algorithm cost, `path_planning/knot_ga.py`, implements a 4-term subset of Eq. 4 — $\mathcal{F}_{data}$, $\mathcal{F}_{curv}$, $\mathcal{F}_{len}$, and $\mathcal{F}_{knot}$ — and folds $\mathcal{F}_{dyn}$'s role into the hard curvature limit $\kappa_{max}$ enforced by $\mathcal{F}_{curv}$ and the local refinement pass of §4.8, rather than optimizing a separate soft velocity/acceleration penalty:
 
 $$
 \text{cost}(U) = w_1 \cdot \text{MSE}(U) + w_2 \cdot \text{curvPenalty}(U) + w_3 \cdot L(U) + w_4 \cdot \text{knotReg}(U)
