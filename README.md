@@ -146,7 +146,7 @@ N_{i,0}(u) = 1 \text{ for } u_i \le u < u_{i+1}\text{, and } 0 \text{ otherwise}
 $$
 
 $$
-N_{i,k}(u) = \frac{u - u_i}{u_{i+k}-u_i}\,N_{i,k-1}(u) \;+\; \frac{u_{i+k+1}-u}{u_{i+k+1}-u_{i+1}}\,N_{i+1,k-1}(u)
+N_{i,k}(u) = \frac{u - u_i}{u_{i+k}-u_i}\cdot N_{i,k-1}(u) + \frac{u_{i+k+1}-u}{u_{i+k+1}-u_{i+1}}\cdot N_{i+1,k-1}(u)
 $$
 
 - $U = \{u_0, u_1, \dots, u_{m+k+1}\}$ — the **knot vector**, partitioning the parameter domain $[u_{min}, u_{max}]$. The endpoints are clamped, $u_0 = u_{min}$ and $u_{m+k+1} = u_{max}$, and the interior knots $\{u_1,\dots,u_{m+k}\}$ are the quantities the genetic algorithm searches over (§4.6).
