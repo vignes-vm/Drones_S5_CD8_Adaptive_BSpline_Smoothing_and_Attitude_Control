@@ -46,7 +46,7 @@ The project follows a two-stage-then-merged methodology:
 3. Prune the raw path to a sparse set of waypoints.
 4. Parameterize the waypoints by chord length.
 5. Fit an initial cubic B-Spline (least-squares control-point solve).
-6. Run a genetic algorithm over the interior knot vector to minimize path length subject to a curvature penalty.
+6. Run a genetic algorithm over the interior knot vector to minimize the weighted objective $\mathcal{J}(D,U)$ — data fidelity, curvature penalty, path length, and knot regularization (§4.5).
 7. Run a local curvature-aware refinement pass that directly nudges control points wherever curvature still exceeds the limit.
 8. At each point along the resulting spline, convert the local tangent into a reference quaternion.
 9. Feed the reference quaternion into a quaternion P² controller, which computes control torque from quaternion attitude error and angular-velocity feedback.
@@ -95,64 +95,143 @@ $$
 h(n) = \lVert (n - n_{goal}) \cdot r \rVert_2 \quad \text{(Euclidean, admissible on a 3D grid)}
 $$
 
+where:
+
+- $f(n)$ — the **total estimated cost** of the cheapest path from start to goal that passes through node $n$. This is the value A\* ranks the search frontier by, always expanding the lowest-$f(n)$ node next.
+- $g(n)$ — the **actual cost so far**: the true, already-accumulated path cost from the start voxel to $n$, built up step by step as $g(\text{parent}) + \lVert \Delta \rVert \cdot r$ for the move $\Delta$ taken to reach $n$ from its parent.
+- $h(n)$ — the **heuristic (estimated remaining cost)**: the straight-line Euclidean distance from $n$ to the goal voxel $n_{goal}$, used to guide the search toward the goal without ever overestimating the true remaining cost (making it admissible, so A\* stays optimal).
+- $r$ — the **voxel grid resolution**, i.e. the real-world side length (in meters) of one grid cell. It converts a grid-index step $\Delta$ (or displacement $n - n_{goal}$, measured in voxels) into a physical distance, so $g(n)$ and $h(n)$ are both expressed in meters and stay directly comparable.
+- $\Delta \in \{-1,0,1\}^3 \setminus \{0\}$ — the offset to a neighboring voxel on the 26-connected grid (any of the 26 adjacent cells in a $3\times3\times3$ block around $n$, excluding $n$ itself), so $\lVert \Delta \rVert$ is $1$ for a face neighbor, $\sqrt{2}$ for an edge neighbor, or $\sqrt{3}$ for a corner neighbor.
+
 The raw voxel path is then pruned to a sparse set of waypoints suitable for spline fitting — collapsing long straight runs while keeping corners.
 
 ## 4. Adaptive B-Spline Smoothing
 
-### 4.1 Parameterization
 
-Waypoints $\{P_0, \dots, P_n\}$ are assigned parameter values $u_i$ by **chord-length parameterization**:
+### 4.1 Track-Smoothing Problem (paper §2.1)
+
+Given a sequence of raw track points $\{p_0, p_1, \dots, p_N\}$, $p_i \in \mathbb{R}^d$ ($d \in \{2,3\}$), obtained from an upstream planner (here, the 3D A\* search of §3) and possibly irregular due to sensor noise or abrupt maneuvers, the paper poses smoothing as constructing a continuous, differentiable curve $C(u)$ that satisfies three requirements simultaneously:
+
+| Requirement | Meaning |
+|---|---|
+| **Data Fidelity** | the smoothed curve should deviate minimally from the raw track data, preserving essential flight details |
+| **Dynamical Feasibility** | the curve must obey kinematic/dynamic limits — maximum velocity, acceleration, and curvature — so the UAV can physically fly it |
+| **Computational Efficiency** | the approach must be solvable fast enough for real-time or near-real-time (re-)planning |
+
+### 4.2 Parameterization
+
+Waypoints $\{p_0, \dots, p_n\}$ are assigned parameter values $u_i$ by **chord-length parameterization**, so that segments proportional to their spatial length occupy proportional shares of the parameter domain:
 
 $$
-u_0 = 0, \qquad u_i = u_{i-1} + \frac{\lVert P_i - P_{i-1} \rVert}{\sum_{k=1}^{n}\lVert P_k - P_{k-1} \rVert}, \qquad u_n = 1
+u_0 = 0, \qquad u_i = u_{i-1} + \frac{\lVert p_i - p_{i-1} \rVert}{\sum_{j=1}^{n}\lVert p_j - p_{j-1} \rVert}, \qquad u_n = 1
 $$
 
-### 4.2 Basis functions — Cox–de Boor recursion
+### 4.3 B-Spline Representation (paper §2.2, Eq. 1)
+
+For a cubic B-Spline ($k = 3$), each coordinate of the trajectory is represented as
+
+$$
+C(u) = \sum_{i=0}^{m} d_i\, N_{i,k}(u), \qquad u_{min} \le u \le u_{max} \tag{1}
+$$
+
+where:
+
+- $D = \{d_0, \dots, d_m\}$, $d_i \in \mathbb{R}^d$ — the **control points**, obtained here by a least-squares fit (§4.7) rather than direct interpolation. They determine the overall shape and position of the curve.
+- $N_{i,k}(u)$ — the **B-Spline basis functions** of degree $k$, given by the Cox–de Boor recursion:
 
 $$
 N_{i,0}(u) = \begin{cases} 1 & u_i \le u < u_{i+1} \\ 0 & \text{otherwise} \end{cases}
 $$
 
 $$
-N_{i,p}(u) = \frac{u - u_i}{u_{i+p}-u_i}\,N_{i,p-1}(u) \;+\; \frac{u_{i+p+1}-u}{u_{i+p+1}-u_{i+1}}\,N_{i+1,p-1}(u)
+N_{i,k}(u) = \frac{u - u_i}{u_{i+k}-u_i}\,N_{i,k-1}(u) \;+\; \frac{u_{i+k+1}-u}{u_{i+k+1}-u_{i+1}}\,N_{i+1,k-1}(u)
 $$
 
-### 4.3 Control-point solve
+- $U = \{u_0, u_1, \dots, u_{m+k+1}\}$ — the **knot vector**, partitioning the parameter domain $[u_{min}, u_{max}]$. The endpoints are clamped, $u_0 = u_{min}$ and $u_{m+k+1} = u_{max}$, and the interior knots $\{u_1,\dots,u_{m+k}\}$ are the quantities the genetic algorithm searches over (§4.6).
 
-Control points $Q_j$ are recovered by solving the linear interpolation system built from the basis matrix $N_{j,p}(u_k)$ so the curve passes exactly through every waypoint:
+$D$ (control points) and $U$ (knot vector) are the paper's two primary **decision variables**. Cubic B-Splines give $C^2$ continuity across knot boundaries (continuous up to the $(k-1)$-th derivative), which is what makes acceleration profiles smooth without the oscillatory (Runge-phenomenon) artifacts of high-order global polynomials, and the curve's **local-modification property** means moving one control point or knot only reshapes the curve in its immediate neighborhood — the basis of "adaptive" placement below.
 
-$$
-C(u_k) = \sum_{j=0}^{n} N_{j,p}(u_k)\, Q_j = P_k, \qquad k = 0,\dots,n
-$$
+### 4.4 Flight-Dynamic Constraints (paper §2.3, Eqs. 2–3)
 
-solved as a least-squares normal-equations system so it degrades gracefully instead of failing on a near-singular basis matrix.
-
-### 4.4 Curvature
-
-Curvature is evaluated numerically from the first and second derivatives of $C(u)$ (central differences):
+The smoothed trajectory must respect the platform's physical limits. The **curvature constraint** bounds turn sharpness to the airframe's aerodynamic/structural limit $\kappa_{max}$:
 
 $$
-\kappa(u) = \frac{\lVert C'(u) \times C''(u) \rVert}{\lVert C'(u) \rVert^{3}}
+\kappa(C(u)) = \frac{\lVert C'(u) \times C''(u) \rVert}{\lVert C'(u) \rVert^{3}} \le \kappa_{max} \tag{2}
 $$
 
-### 4.5 Adaptive knot placement via Genetic Algorithm
+The **velocity and acceleration bounds** reflect the maximum speed and acceleration the propulsion/control surfaces can support without jeopardizing stability:
 
-The GA searches the interior knots to minimize a weighted cost combining data fidelity, curvature violation, path length, and knot regularity:
+$$
+\lVert C'(u) \rVert \le v_{max}, \qquad \lVert C''(u) \rVert \le a_{max} \tag{3}
+$$
+
+(Curvature is evaluated numerically here from the spline's analytic first and second derivatives.) The paper additionally requires the curve to stay in free space around known obstacles — enforced in this project via the buffered A\* grid upstream — and notes that missions may impose boundary conditions (fixed start/end velocity or heading).
+
+### 4.5 Objective Function (paper §2.4, Eq. 4)
+
+The paper aggregates the competing criteria — fidelity, flight-constraint compliance, and minimal abrupt maneuvering — into a single weighted cost:
+
+$$
+\mathcal{J}(D, U) = w_1 \mathcal{F}_{data}(C) + w_2 \mathcal{F}_{curv}(C) + w_3 \mathcal{F}_{dyn}(C) + w_4 \mathcal{F}_{len}(C) + w_5 \mathcal{F}_{knot}(U) \tag{4}
+$$
+
+| Term | Paper's definition | What it does |
+|---|---|---|
+| $\mathcal{F}_{data}(C)$ | sum of squared Euclidean distances between each raw point $p_i$ and its closest point on $C(u)$ | **Data Fidelity** — keeps the smoothed path from drifting away from the route the global planner/sensors actually reported |
+| $\mathcal{F}_{curv}(C)$ | integral of the squared curvature $\kappa(C(u))^2$ along the path | **Curvature Penalty** — discourages sharp turns, reducing mechanical stress and keeping the path inside the UAV's maneuverability envelope |
+| $\mathcal{F}_{dyn}(C)$ | penalizes deviations from, or violations of, soft limits on velocity magnitude $\lVert C'(u)\rVert$ and acceleration magnitude $\lVert C''(u)\rVert$ | **Dynamic Feasibility Penalty** — keeps the trajectory inside the UAV's flight envelope for speed and acceleration |
+| $\mathcal{F}_{len}(C)$ | total arc length of $C(u)$ | **Path Length** — shorter paths save flight time and energy, provided smoothness/safety are not sacrificed |
+| $\mathcal{F}_{knot}(U)$ | penalizes overly dense knot clusters (overfitting/complexity) or excessively sparse spacing (underrepresented features), e.g. via variance of inter-knot spacing | **Knot Distribution Regularization** — keeps $U$ well-behaved, adapting knot density to local trajectory complexity without unnecessary complexity |
+
+The non-negative scalar weights $w_1,\dots,w_5$ tailor the objective to mission requirements (e.g. higher $w_1, w_2$ for sensor-stability-critical surveillance; higher $w_4$ for time-critical search-and-rescue), turning the multi-objective problem into a single-objective one that a genetic algorithm or gradient-free optimizer can solve directly.
+
+**Implemented (practical) cost.** This project's genetic-algorithm cost, `path_planning/knot_ga.py`, implements a 4-term subset of Eq. 4 — $\mathcal{F}_{data}$, $\mathcal{F}_{curv}$, $\mathcal{F}_{len}$, and $\mathcal{F}_{knot}$ — and folds $\mathcal{F}_{dyn}$'s role into the hard curvature limit $\kappa_{max}$ enforced by $\mathcal{F}_{curv}$ and the local refinement pass of §4.7, rather than optimizing a separate soft velocity/acceleration penalty:
 
 $$
 \text{cost}(U) = w_1 \cdot \text{MSE}(U) + w_2 \cdot \text{curvPenalty}(U) + w_3 \cdot L(U) + w_4 \cdot \text{knotReg}(U)
 $$
 
-| Term | Weight (default) | Meaning |
-|---|---:|---|
-| `MSE(U)` | $w_1 = 1.0$ | data-fidelity error between the spline and the original waypoints |
-| `curv_penalty(U)` | $w_2 = 2.0$ | $\sum \max(0, \kappa(u) - \kappa_{max})^2$ sampled along the spline |
-| `L(U)` | $w_3 = 1.0$ | arc length |
-| `knot_reg(U)` | $w_4 = 0.5$ | discourages clustered interior knots |
+| Code term | Weight (default) | Maps to paper term | Computed as |
+|---|---:|---|---|
+| `MSE(U)` | $w_1 = 1.0$ | $\mathcal{F}_{data}$ | mean (not summed, to keep scale-comparable to the other terms) squared distance between each waypoint and the fitted spline |
+| `curv_penalty(U)` | $w_2 = 2.0$ | $\mathcal{F}_{curv}$ | $\sum \max(0, \kappa(u) - \kappa_{max})^2$, sampled along the spline |
+| `L(U)` | $w_3 = 1.0$ | $\mathcal{F}_{len}$ | arc length of $C(u)$ |
+| `knot_reg(U)` | $w_4 = 0.5$ | $\mathcal{F}_{knot}$ | variance of inter-knot spacing — discourages clustered interior knots |
 
-### 4.6 Local curvature-aware control-point refinement
+### 4.6 Adaptive Knot Vector Selection via Genetic Algorithm (paper §3.2)
 
-A final local search directly moves control points wherever curvature still exceeds $\kappa_{max}$ after the GA — shifting each offending control point to reduce $\lVert C'(u) \times C''(u) \rVert$, using a derivative-free gradient estimate and reverting any step that fails to lower curvature. This closes the loop between knot-level optimization and pointwise curvature enforcement.
+Each GA chromosome encodes a candidate knot vector $U = \{u_0, u_1, \dots, u_{m+k+1}\}$, with the endpoints $u_0 = u_{min}$ and $u_{m+k+1} = u_{max}$ fixed and the interior knots $\{u_1,\dots,u_{m+k}\}$ as mutable genes, kept sorted ($u_0 \le u_1 \le \dots \le u_{m+k+1}$) to preserve a valid knot structure. Per the paper, a GA is preferred over gradient-based, simulated-annealing, or PSO schemes here because the knot-selection landscape is discrete and highly non-convex, gradient information is ill-conditioned near collocated knots, and chromosome-based crossover/mutation respects the sorted-order constraint without extra projection steps. Each GA generation applies:
+
+- **Selection** — chromosomes (knot vectors) with lower total cost $\mathcal{J}$ are preferred.
+- **Crossover** — pairs of parent knot vectors exchange segments to produce offspring.
+- **Mutation** — random perturbations of knot positions maintain diversity and avoid local minima.
+
+### 4.7 Control-Point Solve
+
+Control points $d_i$ are recovered for a given knot vector by solving the linear interpolation system built from the basis matrix $N_{i,k}(u_j)$:
+
+$$
+C(u_j) = \sum_{i=0}^{m} N_{i,k}(u_j)\, d_i = p_j, \qquad j = 0,\dots,n
+$$
+
+solved as a least-squares normal-equations system so it degrades gracefully instead of failing on a near-singular basis matrix — matching the paper's "least-squares initialization" step of §3.3.
+
+### 4.8 Curvature-Aware Control-Point Refinement (paper §3.3)
+
+After the GA settles on a knot vector, a local search (here, a derivative-free gradient estimate) directly nudges each control point $d_i$ wherever curvature still exceeds $\kappa_{max}$, shifting it in the direction that reduces $\lVert C'(u) \times C''(u) \rVert$, and reverting any step that fails to lower curvature. This is the paper's second optimization stage: global knot placement via GA, then local per-control-point curvature correction — closing the loop between knot-level optimization and pointwise curvature enforcement.
+
+### 4.9 Evaluation Metrics (paper §4)
+
+The paper compares smoothing methods using four metrics, which this project's comparison table below reproduces:
+
+| Metric | Paper's definition | Interpretation |
+|---|---|---|
+| **Path Length** | $L = \sum_{i=1}^{N-1} \lVert x_{i+1} - x_i \rVert$, over consecutive waypoints/sampled spline points $\{x_i\}$ | shorter is generally preferable, provided smoothness is maintained |
+| **Maximum Curvature** | $\kappa(u) = \dfrac{\lVert C'(u)\times C''(u)\rVert}{\lVert C'(u)\rVert^3}$, sampled at multiple points along the trajectory (Eq. 2) | lower $\kappa_{max}$ means more stable flight, less aerodynamic stress |
+| **Computation Time** | wall-clock time to construct, evaluate, and iteratively refine the spline | matters for near-real-time / on-board re-planning |
+| **Straightness Ratio** | $SR = \dfrac{L}{\lVert x_{goal} - x_{start}\rVert}$ | $SR = 1.0$ is a perfectly straight, obstacle-free path; $SR > 1.0$ reflects detours around obstacles |
+
+The four methods compared, matching the paper's baselines: **Baseline Polyline** (raw, unsmoothed A\* output), **Uniform B-Spline** (uniformly spaced knots), **Classical B-Spline** (fixed, chord-length knots), and the **Proposed Enhanced Adaptive B-Spline** (GA knot placement + curvature-aware refinement, §4.5–4.8).
 
 ### Recreated results (comparison table)
 
