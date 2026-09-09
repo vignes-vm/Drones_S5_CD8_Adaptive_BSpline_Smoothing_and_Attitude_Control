@@ -89,14 +89,19 @@ def quat_to_rot_matrix(q: np.ndarray) -> np.ndarray:
 
 def compute_quat_error(q_ref: np.ndarray, q_m: np.ndarray) -> np.ndarray:
     """
-    Computes unit error quaternion q_err = q_ref ⊗ q_m* (Eq 19 in Paper 1).
+    Computes unit error quaternion q_err = q_m* ⊗ q_ref (Eq 19 in Paper 1),
+    expressed in the BODY frame of q_m so it is consistent with the body-frame
+    angular velocity used alongside it in the P^2 control law.
+    (Note: q_ref ⊗ q_m* instead gives a world-frame error, which combined with
+    body-frame omega in tau = Pq*axis_err - Pw*omega causes attitude instability
+    as soon as the vehicle tilts away from identity orientation.)
     Applies shortest-path logic: if q_err[0] < 0, q_err = -q_err.
     Returns q_err.
     """
     q_ref_u = quat_normalize(q_ref)
     q_m_u = quat_normalize(q_m)
 
-    q_err = quat_mult(q_ref_u, quat_conj(q_m_u))
+    q_err = quat_mult(quat_conj(q_m_u), q_ref_u)
 
     # Shortest path check (Paper 1 Section IV):
     if q_err[0] < 0.0:

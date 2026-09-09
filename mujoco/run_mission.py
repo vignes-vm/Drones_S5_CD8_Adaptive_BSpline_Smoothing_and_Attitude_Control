@@ -19,9 +19,16 @@ from src.bspline_planner import fit_enhanced_adaptive_bspline
 from src.wind_model import WindDisturbanceModel
 from src.quadrotor_mujoco import QuadrotorMuJoCoSim
 from src.trajectory_tracker import CascadedQuadrotorTracker
+from src.quaternion_math import quat_to_rot_matrix
+from src.time_parameterization import build_speed_limited_profile
 
 def quintic_time_scaling(t: float, T: float) -> tuple:
-    """Computes quintic s(t), s_dot(t), s_ddot(t) for smooth start and goal arrival."""
+    """Computes quintic s(t), s_dot(t), s_ddot(t) for smooth start and goal arrival.
+
+    Retained for reference/comparison only. The mission now times its reference
+    with build_speed_limited_profile(); see src/time_parameterization.py for why
+    a quintic map in the spline parameter is not flyable here.
+    """
     tau = np.clip(t / T, 0.0, 1.0)
     s = 10.0 * (tau**3) - 15.0 * (tau**4) + 6.0 * (tau**5)
     ds = (30.0 * (tau**2) - 60.0 * (tau**3) + 30.0 * (tau**4)) / T
@@ -72,8 +79,22 @@ def execute_mission(start_pt: np.ndarray, goal_pt: np.ndarray, wind_speed: float
     tracker.reset()
 
     dt = sim.dt
-    total_flight_time = 15.0
+
+    # Time the geometric path with a trapezoidal speed profile bounded by
+    # v_max/a_max instead of a fixed 15 s quintic. The bounds sit inside the
+    # position controller's tilt-safe acceleration clip (2.0 m/s^2 in transit)
+    # so it always keeps authority in reserve for rejecting the wind, and the
+    # profile decelerates to exactly zero at the goal so the drone settles
+    # there rather than flying through it.
+    eval_at_time, T_path = build_speed_limited_profile(
+        evaluator, scale_factor, v_max=2.0, a_max=1.2)
+
+    HOLD_TIME = 3.0  # hold station at the goal so arrival error is meaningful
+    total_flight_time = T_path + HOLD_TIME
+    goal_scaled = evaluator.eval_pos(1.0) * scale_factor
     total_steps = int(total_flight_time / dt)
+
+    print(f" -> Flight profile: {T_path:.1f}s transit (|v| <= 2.0 m/s) + {HOLD_TIME:.1f}s station hold.")
 
     t_arr = []
     pos_actual_arr = []
@@ -91,22 +112,28 @@ def execute_mission(start_pt: np.ndarray, goal_pt: np.ndarray, wind_speed: float
         state = sim.get_state()
         t = state['time']
 
-        # Quintic time scaling s(t) in [0, 1] with v(0)=0 and v(T)=0
-        s, ds, dds = quintic_time_scaling(t, total_flight_time)
-
-        p_ref = evaluator.eval_pos(s) * scale_factor
-        v_ref = evaluator.eval_vel(s) * ds * scale_factor
-        a_ref = (evaluator.eval_acc(s) * (ds**2) + evaluator.eval_vel(s) * dds) * scale_factor
+        # Arc-length-timed reference; hold station at the goal once it arrives.
+        if t <= T_path:
+            p_ref, v_ref, a_ref = eval_at_time(t)
+        else:
+            p_ref, v_ref, a_ref = goal_scaled.copy(), np.zeros(3), np.zeros(3)
 
         # Compute wind force & torque disturbances acting on aircraft
-        F_wind, tau_wind = wind_engine.compute_disturbance(quad_vel=state['vel'])
+        F_wind, tau_wind = wind_engine.compute_disturbance(
+            quad_vel=state['vel'],
+            R_body_to_world=quat_to_rot_matrix(state['quat']))
 
         # Compute cascaded control action (PID position + Paper 1 Quaternion Attitude controller)
         tau_control, F_thrust = tracker.compute_control(p_ref, v_ref, a_ref, state)
 
-        # Apply forces and step simulation
-        sim.data.qfrc_applied[0:3] = F_wind  # Apply wind drag force in world frame
-        sim.step(tau=tau_control + tau_wind, thrust_force=F_thrust, real_time=gui)
+        # Apply forces and step simulation. The disturbances must go through
+        # step() -- it owns qfrc_applied and assigns it, so anything written
+        # into that buffer from out here is discarded before mj_step runs.
+        sim.step(tau=tau_control,
+                 thrust_force=F_thrust,
+                 f_ext_world=F_wind,
+                 tau_ext_body=tau_wind,
+                 real_time=gui)
 
         # Record metrics in MuJoCo arena scale (meters)
         err_mujoco = np.linalg.norm(state['pos'] - p_ref)

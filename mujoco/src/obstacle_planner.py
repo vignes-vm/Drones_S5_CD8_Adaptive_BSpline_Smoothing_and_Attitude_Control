@@ -5,6 +5,17 @@ Generates collision-free 3D polyline waypoints for ANY user-specified Start and 
 
 import numpy as np
 
+# Must match models/airspace_scene.xml exactly (its geom pos/size * 100, since
+# the sim scales this planner's unscaled coordinates by 0.01).
+# Box: pos+size -> bounds [xmin, xmax, ymin, ymax, zmin, zmax]
+# Cylinder: pos+size -> center [x,y], radius, height
+DEFAULT_OBSTACLES = [
+    {'type': 'box', 'bounds': [450, 750, 350, 650, 0, 400]},        # pos="6 5 2.0" size="1.5 1.5 2.0"
+    {'type': 'cylinder', 'center': [1100, 800], 'radius': 100, 'height': 250},   # pos="11 8 2.5" size="1.0 2.5"
+    {'type': 'box', 'bounds': [1300, 1700, 1180, 1420, 0, 360]},    # pos="15 13 1.8" size="2.0 1.2 1.8"
+    {'type': 'cylinder', 'center': [800, 1400], 'radius': 120, 'height': 220}    # pos="8 14 2.2" size="1.2 2.2"
+]
+
 def is_point_in_obstacle(point: np.ndarray, obstacle: dict, buffer_margin: float = 20.0) -> bool:
     """Checks if a 3D point is inside an obstacle (with safety buffer margin)."""
     if obstacle['type'] == 'box':
@@ -29,12 +40,7 @@ def generate_obstacle_free_waypoints(start_pt: np.ndarray, goal_pt: np.ndarray, 
     Handles arbitrary user-defined Start and Goal points in 3D space.
     """
     if obstacles is None:
-        obstacles = [
-            {'type': 'box', 'bounds': [500, 700, 400, 600, 0, 300]},
-            {'type': 'cylinder', 'center': [1100, 800], 'radius': 120, 'height': 400},
-            {'type': 'box', 'bounds': [1400, 1600, 1100, 1350, 0, 280]},
-            {'type': 'cylinder', 'center': [800, 1400], 'radius': 150, 'height': 350}
-        ]
+        obstacles = DEFAULT_OBSTACLES
 
     # Initial linear interpolation
     t_vals = np.linspace(0, 1, num_intermediate + 2)

@@ -45,16 +45,25 @@ class WindDisturbanceModel:
         self.gust_state = alpha * self.gust_state + (1 - alpha) * noise
         return self.gust_state
 
-    def compute_disturbance(self, quad_vel: np.ndarray) -> tuple:
+    def compute_disturbance(self, quad_vel: np.ndarray, R_body_to_world: np.ndarray = None) -> tuple:
         """
         Computes realistic aerodynamic drag force and torque disturbance:
-        F_drag: (3,) force vector in world frame (N)
-        tau_dist: (3,) torque disturbance vector in body frame (Nm)
+        F_drag: (3,) force vector in WORLD frame (N)
+        tau_dist: (3,) torque disturbance vector in BODY frame (Nm)
+
+        Args:
+            quad_vel: (3,) vehicle velocity in the world frame.
+            R_body_to_world: (3,3) attitude matrix. The rotor-drag imbalance
+                torque acts about the airframe's own roll/pitch axes, so it is
+                built from the relative air velocity resolved into the BODY
+                frame. Without this the torque was derived from world-frame
+                components while being applied to body-frame DOFs, which is
+                only equivalent at zero yaw. Defaults to identity.
         """
         gust = self.update_gust()
         v_total_wind = self.v_mean + gust
 
-        # Relative air velocity
+        # Relative air velocity (world frame)
         v_rel = v_total_wind - quad_vel
         speed_rel = np.linalg.norm(v_rel)
 
@@ -64,10 +73,16 @@ class WindDisturbanceModel:
         # Cap drag force to realistic limits for 0.5kg drone (max ~1.5 N)
         F_drag = np.clip(F_drag, -1.5, 1.5)
 
+        # Resolve the relative wind into the body frame for the torque model.
+        if R_body_to_world is None:
+            v_rel_body = v_rel
+        else:
+            v_rel_body = R_body_to_world.T @ v_rel
+
         # Aerodynamic torque disturbance due to rotor drag imbalance under crosswind
         tau_dist = np.random.normal(0, 0.005, size=3)
-        tau_dist[0] += 0.01 * v_rel[1]  # Roll disturbance from crosswind
-        tau_dist[1] -= 0.01 * v_rel[0]  # Pitch disturbance from crosswind
+        tau_dist[0] += 0.01 * v_rel_body[1]  # Roll disturbance from crosswind
+        tau_dist[1] -= 0.01 * v_rel_body[0]  # Pitch disturbance from crosswind
         tau_dist = np.clip(tau_dist, -0.2, 0.2)
 
         return F_drag, tau_dist

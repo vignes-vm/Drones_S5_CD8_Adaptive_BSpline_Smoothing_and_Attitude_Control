@@ -72,7 +72,7 @@ class QuadrotorMuJoCoSim:
         - position: (3,)
         - velocity: (3,)
         - quat: (4,) [q0, q1, q2, q3]
-        - omega: (3,) [wx, wy, wz]
+        - omega: (3,) [wx, wy, wz] in the BODY frame (MuJoCo freejoint convention)
         - time: float
         """
         pos = np.array(self.data.qpos[0:3], dtype=np.float64)
@@ -89,24 +89,51 @@ class QuadrotorMuJoCoSim:
             'time': t
         }
 
-    def step(self, tau: np.ndarray, thrust_force: float = 0.0, real_time: bool = False):
+    def step(self,
+             tau: np.ndarray,
+             thrust_force: float = 0.0,
+             f_ext_world: np.ndarray = None,
+             tau_ext_body: np.ndarray = None,
+             real_time: bool = False):
         """
-        Steps physical simulation by dt using applied torque tau = [Mx, My, Mz]
-        and vertical thrust force F_thrust.
+        Steps the physics by one dt under the total applied wrench.
+
+        Frame contract (MuJoCo `freejoint`, verified in
+        tests/test_wrench_frames.py::test_freejoint_rotational_dofs_are_body_frame):
+          qfrc_applied[0:3] -- force,  WORLD frame
+          qfrc_applied[3:6] -- torque, BODY frame
+
+        Args:
+            tau:          (3,) control torque, BODY frame [Mx, My, Mz].
+            thrust_force: scalar thrust magnitude along the body z-axis.
+            f_ext_world:  (3,) external disturbance force, WORLD frame (e.g. wind
+                          drag). Pass it here rather than writing qfrc_applied
+                          directly -- this method owns that buffer and any value
+                          written into it from outside is overwritten below.
+            tau_ext_body: (3,) external disturbance torque, BODY frame.
         """
         step_start = time.time()
 
-        # Apply torque to rotational qvel degrees of freedom
-        self.data.qfrc_applied[3:6] = tau
-
-        # Convert body vertical thrust to world frame force
+        # Convert body vertical thrust to a world-frame force.
         q = self.data.qpos[3:7]
         R = quat_to_rot_matrix(q)
-        body_z_in_world = R[:, 2]
-        world_thrust = body_z_in_world * thrust_force
+        world_thrust = R[:, 2] * thrust_force
 
-        # Apply thrust force to translational qvel degrees of freedom (REPLACE, DO NOT ACCUMULATE)
-        self.data.qfrc_applied[0:3] = world_thrust
+        # Compose the COMPLETE wrench here, in one place. This buffer is
+        # assigned (not accumulated) every step, so every contribution has to
+        # arrive through this call. A previous version had callers write the
+        # wind force into qfrc_applied[0:3] before calling step(), where the
+        # thrust assignment silently discarded it before mj_step ever ran.
+        total_force = world_thrust
+        if f_ext_world is not None:
+            total_force = total_force + np.asarray(f_ext_world, dtype=np.float64)
+
+        total_torque = np.asarray(tau, dtype=np.float64)
+        if tau_ext_body is not None:
+            total_torque = total_torque + np.asarray(tau_ext_body, dtype=np.float64)
+
+        self.data.qfrc_applied[0:3] = total_force
+        self.data.qfrc_applied[3:6] = total_torque
 
         mujoco.mj_step(self.model, self.data)
 
