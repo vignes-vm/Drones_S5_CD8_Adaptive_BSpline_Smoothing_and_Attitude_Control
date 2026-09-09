@@ -10,7 +10,7 @@ Executes:
    - Method 3: Classical B-Spline (Fixed Knots - Chord-Length)
    - Method 4: Proposed Enhanced Adaptive B-Spline (GA Knot Optimization + Curvature Refinement)
 3. Performance Metrics Table calculation matching Table 2 in Paper 2.
-4. MuJoCo Physics Flight Simulation with smooth quintic time-scaling for 100% precision flight.
+4. MuJoCo Physics Flight Simulation, timed by an arc-length trapezoidal speed profile.
 """
 
 import os
@@ -28,6 +28,7 @@ from src.bspline_planner import (
 )
 from src.quadrotor_mujoco import QuadrotorMuJoCoSim
 from src.trajectory_tracker import CascadedQuadrotorTracker
+from src.time_parameterization import build_speed_limited_profile
 
 def quintic_time_scaling(t: float, T: float) -> tuple:
     """
@@ -190,7 +191,17 @@ def run_paper2_simulations(gui: bool = False, output_dir: str = "output_plots"):
     tracker.reset()
 
     dt = sim.dt
-    total_flight_time = 15.0
+    # Time the path against arc length with explicit speed/acceleration bounds
+    # rather than a fixed 15 s quintic in the spline parameter -- the latter
+    # demanded ~8.6 m/s^2 against the controller's tilt-safe bound and made the
+    # tracking figure a picture of an infeasible reference rather than of the
+    # smoothing method's quality. See src/time_parameterization.py.
+    eval_at_time, T_path = build_speed_limited_profile(
+        ev_m4, scale_factor, v_max=2.0, a_max=1.2)
+
+    HOLD_TIME = 3.0
+    total_flight_time = T_path + HOLD_TIME
+    goal_scaled = ev_m4.eval_pos(1.0) * scale_factor
     total_steps = int(total_flight_time / dt)
 
     flight_pos_arr = []
@@ -200,12 +211,11 @@ def run_paper2_simulations(gui: bool = False, output_dir: str = "output_plots"):
     for step_idx in range(total_steps):
         t = sim.get_state()['time']
 
-        # Quintic time scaling s(t) in [0, 1] with v(0)=0 and v(T)=0
-        s, ds, dds = quintic_time_scaling(t, total_flight_time)
-
-        p_ref = ev_m4.eval_pos(s) * scale_factor
-        v_ref = ev_m4.eval_vel(s) * ds * scale_factor
-        a_ref = (ev_m4.eval_acc(s) * (ds**2) + ev_m4.eval_vel(s) * dds) * scale_factor
+        # Arc-length-timed reference; hold station at the goal once it arrives.
+        if t <= T_path:
+            p_ref, v_ref, a_ref = eval_at_time(t)
+        else:
+            p_ref, v_ref, a_ref = goal_scaled.copy(), np.zeros(3), np.zeros(3)
 
         state = sim.get_state()
         tau, F_thrust = tracker.compute_control(p_ref, v_ref, a_ref, state)
