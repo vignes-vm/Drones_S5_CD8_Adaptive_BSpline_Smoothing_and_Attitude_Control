@@ -1,5 +1,11 @@
 import numpy as np
-import pygad
+try:
+    import pygad
+    PYGAD_AVAILABLE = True
+except ImportError:
+    PYGAD_AVAILABLE = False
+    pygad = None
+
 
 class KnotGA:
 
@@ -45,10 +51,7 @@ class KnotGA:
         except:
             return 1e6   # invalid chromosome
 
-        # Term 1 — Data fidelity (mean squared error, not summed —
-        # a raw sum scales with n_waypoints and, at this environment's
-        # scale, drowns out the curvature penalty term below by
-        # several orders of magnitude, making the GA blind to curvature)
+        # Term 1 — Data fidelity (mean squared error)
         fidelity = 0
         for i, wp in enumerate(self.waypoints):
             u = spline.params[i]
@@ -79,32 +82,72 @@ class KnotGA:
 
     def fitness_function(self, ga_instance, solution, sol_idx):
         cost = self.evaluate_chromosome(solution)
-        return -cost 
+        return -cost
+
+    def _run_numpy_ga(self):
+        rng = np.random.default_rng(42)
+        pop = rng.uniform(0.01, 0.99, size=(self.pop_size, self.n_inner))
+        best_sol = None
+        best_cost = float('inf')
+
+        for gen in range(self.n_generations):
+            costs = np.array([self.evaluate_chromosome(ind) for ind in pop])
+            min_idx = np.argmin(costs)
+            if costs[min_idx] < best_cost:
+                best_cost = costs[min_idx]
+                best_sol = pop[min_idx].copy()
+
+            # Tournament selection & crossover
+            new_pop = [best_sol.copy(), pop[min_idx].copy()]
+            while len(new_pop) < self.pop_size:
+                idx1, idx2 = rng.choice(self.pop_size, 2, replace=False)
+                p1 = pop[idx1] if costs[idx1] < costs[idx2] else pop[idx2]
+                idx3, idx4 = rng.choice(self.pop_size, 2, replace=False)
+                p2 = pop[idx3] if costs[idx3] < costs[idx4] else pop[idx4]
+
+                xpoint = rng.integers(1, self.n_inner)
+                child = np.concatenate([p1[:xpoint], p2[xpoint:]])
+
+                # Mutation
+                if rng.random() < 0.3:
+                    m_idx = rng.integers(0, self.n_inner)
+                    child[m_idx] = rng.uniform(0.01, 0.99)
+
+                new_pop.append(child)
+
+            pop = np.array(new_pop[:self.pop_size])
+
+        self.best_knots = self.build_knot_vector(np.sort(best_sol))
+        self.best_fitness = -best_cost
+        print(f"GA complete (NumPy fallback). Best cost: {best_cost:.4f}", flush=True)
+        return self.best_knots
 
     def run(self):
-        print("Running Genetic Algorithm for knot optimization...")
+        print("Running Genetic Algorithm for knot optimization...", flush=True)
 
-        ga = pygad.GA(
-            num_generations=self.n_generations,
-            num_parents_mating=self.pop_size // 3,
-            fitness_func=self.fitness_function,
-            sol_per_pop=self.pop_size,
-            num_genes=self.n_inner,
-            gene_space={'low': 0.01, 'high': 0.99},
-            mutation_percent_genes=20,
-            crossover_type="single_point",
-            mutation_type="random",
-            keep_parents=2,
-            suppress_warnings=True
-        )
+        if not PYGAD_AVAILABLE:
+            return self._run_numpy_ga()
 
-        ga.run()
+        try:
+            ga = pygad.GA(
+                num_generations=self.n_generations,
+                num_parents_mating=self.pop_size // 3,
+                fitness_func=self.fitness_function,
+                sol_per_pop=self.pop_size,
+                num_genes=self.n_inner,
+                gene_space={'low': 0.01, 'high': 0.99},
+                mutation_percent_genes=20,
+                crossover_type="single_point",
+                mutation_type="random",
+                keep_parents=2,
+                suppress_warnings=True
+            )
+            ga.run()
 
-        best_solution, best_fitness, _ = ga.best_solution()
-        self.best_knots = self.build_knot_vector(
-            np.sort(best_solution)
-        )
-        self.best_fitness = best_fitness
-
-        print(f"GA complete. Best cost: {-best_fitness:.4f}")
-        return self.best_knots
+            best_solution, best_fitness, _ = ga.best_solution()
+            self.best_knots = self.build_knot_vector(np.sort(best_solution))
+            self.best_fitness = best_fitness
+            print(f"GA complete. Best cost: {-best_fitness:.4f}", flush=True)
+            return self.best_knots
+        except Exception:
+            return self._run_numpy_ga()
