@@ -125,6 +125,13 @@ class Quadrotor3DWindow(tk.Tk):
         )
         reset_btn.pack(side=tk.LEFT, padx=5)
 
+        rand_btn = tk.Button(
+            toolbar, text="🎲 Randomize Map", font=("Segoe UI", 10),
+            fg="#f8fafc", bg="#059669", activebackground="#047857",
+            relief=tk.FLAT, command=self._randomize_map, padx=12, pady=4
+        )
+        rand_btn.pack(side=tk.LEFT, padx=5)
+
         # Progress Slider
         self.slider_var = tk.DoubleVar(value=0.0)
         self.slider = ttk.Scale(
@@ -330,6 +337,22 @@ class Quadrotor3DWindow(tk.Tk):
     def _on_slider(self, val):
         self.u_current = float(val)
         self.pos = self.spline.evaluate(self.u_current)
+
+    def _randomize_map(self):
+        new_seed = int(np.random.randint(1, 99999))
+        print(f"Randomizing 3D obstacles with seed={new_seed}...")
+        self.env_3d = Environment3D()
+        self.env_3d.add_random_obstacles(n_cylinders=5, n_cuboids=5, seed=new_seed)
+
+        astar = AStarPlanner3D(self.env_3d, grid_resolution=50)
+        raw_wp = np.array(astar.plan(self.env_3d.start, self.env_3d.goal))
+        baseline_wp = np.array(astar.smooth_waypoints(raw_wp, min_distance=100))
+        self.spline = BSplinePath(baseline_wp, param_mode='uniform')
+        self.path_len = self.spline.path_length()
+        self.spline_pts = self.spline.sample_path(200)
+        self.dt_u = (self.flight_speed / max(1.0, self.path_len)) * self.dt_sim
+
+        self._reset_flight()
 
 
 if __name__ == '__main__':
