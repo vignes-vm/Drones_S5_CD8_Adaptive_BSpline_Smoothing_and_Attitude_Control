@@ -99,31 +99,31 @@ class Quadrotor3DWindow(tk.Tk):
             header, text="🛸 PyBullet 3D Real-Time UAV Flight Viewport",
             font=("Segoe UI", 14, "bold"), fg="#f8fafc", bg="#1e293b"
         )
-        title_lbl.pack(side=tk.LEFT, px=15, py=10)
+        title_lbl.pack(side=tk.LEFT, padx=15, pady=10)
 
         sub_lbl = tk.Label(
             header, text="Drag mouse to orbit 3D view • Scroll to zoom",
             font=("Segoe UI", 9), fg="#94a3b8", bg="#1e293b"
         )
-        sub_lbl.pack(side=tk.RIGHT, px=15, py=10)
+        sub_lbl.pack(side=tk.RIGHT, padx=15, pady=10)
 
         # Control Toolbar
         toolbar = tk.Frame(self, bg="#0f172a", height=45)
-        toolbar.pack(fill=tk.X, side=tk.BOTTOM, px=15, py=8)
+        toolbar.pack(fill=tk.X, side=tk.BOTTOM, padx=15, pady=8)
 
         self.play_btn = tk.Button(
             toolbar, text="⏸ Pause", font=("Segoe UI", 10, "bold"),
             fg="white", bg="#3b82f6", activebackground="#2563eb",
-            relief=tk.FLAT, command=self._toggle_play, px=12, py=4
+            relief=tk.FLAT, command=self._toggle_play, padx=12, pady=4
         )
-        self.play_btn.pack(side=tk.LEFT, px=5)
+        self.play_btn.pack(side=tk.LEFT, padx=5)
 
         reset_btn = tk.Button(
             toolbar, text="↺ Reset Flight", font=("Segoe UI", 10),
             fg="#f8fafc", bg="#334155", activebackground="#475569",
-            relief=tk.FLAT, command=self._reset_flight, px=12, py=4
+            relief=tk.FLAT, command=self._reset_flight, padx=12, pady=4
         )
-        reset_btn.pack(side=tk.LEFT, px=5)
+        reset_btn.pack(side=tk.LEFT, padx=5)
 
         # Progress Slider
         self.slider_var = tk.DoubleVar(value=0.0)
@@ -131,17 +131,17 @@ class Quadrotor3DWindow(tk.Tk):
             toolbar, from_=0.0, to=1.0, variable=self.slider_var,
             orient=tk.HORIZONTAL, command=self._on_slider
         )
-        self.slider.pack(side=tk.LEFT, fill=tk.X, expand=True, px=15)
+        self.slider.pack(side=tk.LEFT, fill=tk.X, expand=True, padx=15)
 
         self.hud_text = tk.Label(
             toolbar, text="Pos: (0, 0, 20) | Motor RPM: 280",
             font=("Consolas", 10), fg="#38bdf8", bg="#0f172a"
         )
-        self.hud_text.pack(side=tk.RIGHT, px=10)
+        self.hud_text.pack(side=tk.RIGHT, padx=10)
 
         # 3D Graphics Canvas
         self.canvas = tk.Canvas(self, bg="#020617", highlightthickness=0)
-        self.canvas.pack(fill=tk.BOTH, expand=True, px=15, py=5)
+        self.canvas.pack(fill=tk.BOTH, expand=True, padx=15, pady=5)
 
     def _on_mouse_down(self, event):
         self.is_dragging = True
