@@ -1,0 +1,222 @@
+<?xml version="1.0" ?>
+<sdf version="1.8">
+  <world name="airspace_seed_123">
+    <physics name="dart_physics" type="dart">
+      <max_step_size>0.002</max_step_size>
+      <real_time_factor>1.0</real_time_factor>
+      <real_time_update_rate>500</real_time_update_rate>
+    </physics>
+
+    <plugin filename="gz-sim-physics-system" name="gz::sim::systems::Physics"/>
+    <plugin filename="gz-sim-user-commands-system" name="gz::sim::systems::UserCommands"/>
+    <plugin filename="gz-sim-scene-broadcaster-system" name="gz::sim::systems::SceneBroadcaster"/>
+
+    <light type="directional" name="sun">
+      <cast_shadows>true</cast_shadows>
+      <pose>0 0 500 0 0 0</pose>
+      <diffuse>0.8 0.8 0.8 1</diffuse>
+      <specular>0.2 0.2 0.2 1</specular>
+      <direction>-0.5 0.1 -0.9</direction>
+    </light>
+
+    <model name="ground_plane">
+      <static>true</static>
+      <link name="link">
+        <collision name="col">
+          <geometry><plane><normal>0 0 1</normal><size>3000 3000</size></plane></geometry>
+        </collision>
+        <visual name="vis">
+          <geometry><plane><normal>0 0 1</normal><size>3000 3000</size></plane></geometry>
+          <material><ambient>0.8 0.8 0.8 1</ambient><diffuse>0.8 0.8 0.8 1</diffuse></material>
+        </visual>
+      </link>
+    </model>
+
+
+    <!-- Cylinder Tower 0 -->
+    <model name="cylinder_obs_0">
+      <static>true</static>
+      <pose>469.97 401.75 58.07 0 0 0</pose>
+      <link name="link">
+        <collision name="col">
+          <geometry><cylinder><radius>47.29</radius><length>116.15</length></cylinder></geometry>
+        </collision>
+        <visual name="vis">
+          <geometry><cylinder><radius>47.29</radius><length>116.15</length></cylinder></geometry>
+          <material>
+            <ambient>0.8 0.2 0.2 1</ambient>
+            <diffuse>0.85 0.25 0.25 1</diffuse>
+          </material>
+        </visual>
+      </link>
+    </model>
+
+    <!-- Cylinder Tower 1 -->
+    <model name="cylinder_obs_1">
+      <static>true</static>
+      <pose>1819.57 567.46 171.81 0 0 0</pose>
+      <link name="link">
+        <collision name="col">
+          <geometry><cylinder><radius>27.04</radius><length>343.63</length></cylinder></geometry>
+        </collision>
+        <visual name="vis">
+          <geometry><cylinder><radius>27.04</radius><length>343.63</length></cylinder></geometry>
+          <material>
+            <ambient>0.8 0.2 0.2 1</ambient>
+            <diffuse>0.85 0.25 0.25 1</diffuse>
+          </material>
+        </visual>
+      </link>
+    </model>
+
+    <!-- Cylinder Tower 2 -->
+    <model name="cylinder_obs_2">
+      <static>true</static>
+      <pose>1024.44 519.41 183.48 0 0 0</pose>
+      <link name="link">
+        <collision name="col">
+          <geometry><cylinder><radius>52.79</radius><length>366.97</length></cylinder></geometry>
+        </collision>
+        <visual name="vis">
+          <geometry><cylinder><radius>52.79</radius><length>366.97</length></cylinder></geometry>
+          <material>
+            <ambient>0.8 0.2 0.2 1</ambient>
+            <diffuse>0.85 0.25 0.25 1</diffuse>
+          </material>
+        </visual>
+      </link>
+    </model>
+
+    <!-- Cylinder Tower 3 -->
+    <model name="cylinder_obs_3">
+      <static>true</static>
+      <pose>1454.94 1244.82 82.06 0 0 0</pose>
+      <link name="link">
+        <collision name="col">
+          <geometry><cylinder><radius>52.97</radius><length>164.13</length></cylinder></geometry>
+        </collision>
+        <visual name="vis">
+          <geometry><cylinder><radius>52.97</radius><length>164.13</length></cylinder></geometry>
+          <material>
+            <ambient>0.8 0.2 0.2 1</ambient>
+            <diffuse>0.85 0.25 0.25 1</diffuse>
+          </material>
+        </visual>
+      </link>
+    </model>
+
+    <!-- Cylinder Tower 4 -->
+    <model name="cylinder_obs_4">
+      <static>true</static>
+      <pose>1561.10 1034.07 84.79 0 0 0</pose>
+      <link name="link">
+        <collision name="col">
+          <geometry><cylinder><radius>57.10</radius><length>169.57</length></cylinder></geometry>
+        </collision>
+        <visual name="vis">
+          <geometry><cylinder><radius>57.10</radius><length>169.57</length></cylinder></geometry>
+          <material>
+            <ambient>0.8 0.2 0.2 1</ambient>
+            <diffuse>0.85 0.25 0.25 1</diffuse>
+          </material>
+        </visual>
+      </link>
+    </model>
+
+    <!-- Cuboid Building 5 -->
+    <model name="cuboid_obs_5">
+      <static>true</static>
+      <pose>1811.15 1234.66 122.82 0 0 0</pose>
+      <link name="link">
+        <collision name="col">
+          <geometry><box><size>52.23 120.67 245.65</size></box></geometry>
+        </collision>
+        <visual name="vis">
+          <geometry><box><size>52.23 120.67 245.65</size></box></geometry>
+          <material>
+            <ambient>0.2 0.6 0.3 1</ambient>
+            <diffuse>0.25 0.7 0.35 1</diffuse>
+          </material>
+        </visual>
+      </link>
+    </model>
+
+    <!-- Cuboid Building 6 -->
+    <model name="cuboid_obs_6">
+      <static>true</static>
+      <pose>619.27 1049.23 136.52 0 0 0</pose>
+      <link name="link">
+        <collision name="col">
+          <geometry><box><size>91.68 169.56 273.04</size></box></geometry>
+        </collision>
+        <visual name="vis">
+          <geometry><box><size>91.68 169.56 273.04</size></box></geometry>
+          <material>
+            <ambient>0.2 0.6 0.3 1</ambient>
+            <diffuse>0.25 0.7 0.35 1</diffuse>
+          </material>
+        </visual>
+      </link>
+    </model>
+
+    <!-- Cuboid Building 7 -->
+    <model name="cuboid_obs_7">
+      <static>true</static>
+      <pose>1511.19 395.40 73.79 0 0 0</pose>
+      <link name="link">
+        <collision name="col">
+          <geometry><box><size>60.72 137.49 147.58</size></box></geometry>
+        </collision>
+        <visual name="vis">
+          <geometry><box><size>60.72 137.49 147.58</size></box></geometry>
+          <material>
+            <ambient>0.2 0.6 0.3 1</ambient>
+            <diffuse>0.25 0.7 0.35 1</diffuse>
+          </material>
+        </visual>
+      </link>
+    </model>
+
+    <!-- Cuboid Building 8 -->
+    <model name="cuboid_obs_8">
+      <static>true</static>
+      <pose>993.76 938.60 53.26 0 0 0</pose>
+      <link name="link">
+        <collision name="col">
+          <geometry><box><size>96.91 52.17 106.51</size></box></geometry>
+        </collision>
+        <visual name="vis">
+          <geometry><box><size>96.91 52.17 106.51</size></box></geometry>
+          <material>
+            <ambient>0.2 0.6 0.3 1</ambient>
+            <diffuse>0.25 0.7 0.35 1</diffuse>
+          </material>
+        </visual>
+      </link>
+    </model>
+
+    <!-- Cuboid Building 9 -->
+    <model name="cuboid_obs_9">
+      <static>true</static>
+      <pose>561.20 1564.42 111.65 0 0 0</pose>
+      <link name="link">
+        <collision name="col">
+          <geometry><box><size>114.09 175.27 223.30</size></box></geometry>
+        </collision>
+        <visual name="vis">
+          <geometry><box><size>114.09 175.27 223.30</size></box></geometry>
+          <material>
+            <ambient>0.2 0.6 0.3 1</ambient>
+            <diffuse>0.25 0.7 0.35 1</diffuse>
+          </material>
+        </visual>
+      </link>
+    </model>
+
+    <include>
+      <uri>model://quadrotor</uri>
+      <name>quadrotor</name>
+      <pose>0.0 0.0 20.0 0 0 0</pose>
+    </include>
+  </world>
+</sdf>

@@ -1,0 +1,140 @@
+<?xml version="1.0" ?>
+<sdf version="1.8">
+  <model name="quadrotor">
+    <pose>0 0 0.1 0 0 0</pose>
+    <static>false</static>
+    
+    <!-- Central body / airframe -->
+    <link name="base_link">
+      <inertial>
+        <mass>1.0</mass>
+        <inertia>
+          <ixx>0.00065</ixx>
+          <ixy>0.0</ixy>
+          <ixz>0.0</ixz>
+          <iyy>0.00065</iyy>
+          <iyz>0.0</iyz>
+          <izz>0.0012</izz>
+        </inertia>
+      </inertial>
+
+      <!-- Center Fuselage Visual & Collision -->
+      <collision name="center_collision">
+        <pose>0 0 0 0 0 0</pose>
+        <geometry>
+          <sphere>
+            <radius>0.09</radius>
+          </sphere>
+        </geometry>
+      </collision>
+      <visual name="center_visual">
+        <pose>0 0 0 0 0 0</pose>
+        <geometry>
+          <sphere>
+            <radius>0.09</radius>
+          </sphere>
+        </geometry>
+        <material>
+          <ambient>0.2 0.2 0.8 1.0</ambient>
+          <diffuse>0.2 0.3 0.9 1.0</diffuse>
+          <specular>0.8 0.8 0.8 1.0</specular>
+        </material>
+      </visual>
+
+      <!-- Arm X (+x to -x, length 0.46m) -->
+      <visual name="arm_x_visual">
+        <pose>0 0 0 0 1.5707963 0</pose>
+        <geometry>
+          <cylinder>
+            <radius>0.012</radius>
+            <length>0.46</length>
+          </cylinder>
+        </geometry>
+        <material>
+          <ambient>0.3 0.3 0.3 1.0</ambient>
+          <diffuse>0.4 0.4 0.4 1.0</diffuse>
+        </material>
+      </visual>
+
+      <!-- Arm Y (+y to -y, length 0.46m) -->
+      <visual name="arm_y_visual">
+        <pose>0 0 0 1.5707963 0 0</pose>
+        <geometry>
+          <cylinder>
+            <radius>0.012</radius>
+            <length>0.46</length>
+          </cylinder>
+        </geometry>
+        <material>
+          <ambient>0.3 0.3 0.3 1.0</ambient>
+          <diffuse>0.4 0.4 0.4 1.0</diffuse>
+        </material>
+      </visual>
+
+      <!-- Rotor 0 (+X Front, Red) -->
+      <visual name="rotor_0_visual">
+        <pose>0.23 0 0.02 0 0 0</pose>
+        <geometry>
+          <cylinder>
+            <radius>0.08</radius>
+            <length>0.01</length>
+          </cylinder>
+        </geometry>
+        <material>
+          <ambient>0.9 0.1 0.1 0.8</ambient>
+          <diffuse>0.9 0.1 0.1 0.8</diffuse>
+        </material>
+      </visual>
+
+      <!-- Rotor 1 (-Y Right, Green) -->
+      <visual name="rotor_1_visual">
+        <pose>0 -0.23 0.02 0 0 0</pose>
+        <geometry>
+          <cylinder>
+            <radius>0.08</radius>
+            <length>0.01</length>
+          </cylinder>
+        </geometry>
+        <material>
+          <ambient>0.1 0.8 0.1 0.8</ambient>
+          <diffuse>0.1 0.8 0.1 0.8</diffuse>
+        </material>
+      </visual>
+
+      <!-- Rotor 2 (-X Back, Blue) -->
+      <visual name="rotor_2_visual">
+        <pose>-0.23 0 0.02 0 0 0</pose>
+        <geometry>
+          <cylinder>
+            <radius>0.08</radius>
+            <length>0.01</length>
+          </cylinder>
+        </geometry>
+        <material>
+          <ambient>0.1 0.1 0.9 0.8</ambient>
+          <diffuse>0.1 0.1 0.9 0.8</diffuse>
+        </material>
+      </visual>
+
+      <!-- Rotor 3 (+Y Left, Yellow) -->
+      <visual name="rotor_3_visual">
+        <pose>0 0.23 0.02 0 0 0</pose>
+        <geometry>
+          <cylinder>
+            <radius>0.08</radius>
+            <length>0.01</length>
+          </cylinder>
+        </geometry>
+        <material>
+          <ambient>0.9 0.9 0.1 0.8</ambient>
+          <diffuse>0.9 0.9 0.1 0.8</diffuse>
+        </material>
+      </visual>
+    </link>
+
+    <!-- Plugin for applying control wrench directly to base_link -->
+    <plugin filename="gz-sim-apply-link-wrench-system" name="gz::sim::systems::ApplyLinkWrench">
+      <link_name>base_link</link_name>
+    </plugin>
+  </model>
+</sdf>
