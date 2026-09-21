@@ -155,12 +155,7 @@ if __name__ == '__main__':
 
     print("\n" + "=" * 55)
     print("Table 2: Performance of Four Path-Smoothing Methods")
-    print("=" * 55)
-<<<<<<< HEAD
     print(f"{'Method':<20} {'Length(m)':<10} {'Max kappa(m^-1)':<15} "
-=======
-    print(f"{'Method':<20} {'Length(m)':<10} {'Max_kappa':<11} "
->>>>>>> 8f5c5c48981b958f90da18e40fcb1cb2d8584ef3
           f"{'Time(s)':<9} {'SR'}")
 
     print("-" * 55)
