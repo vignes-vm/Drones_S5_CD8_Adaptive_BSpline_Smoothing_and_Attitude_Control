@@ -4,6 +4,18 @@ This directory contains the **Gazebo 3D Physics Simulation Stack** integrating b
 1. **Paper 1**: *"An Enhanced Adaptive B-spline Smoothing Approach for UAV Path Planning"* (3D A* Search + 3-Stage GA Adaptive B-Spline Path Smoothing in Cluttered 3D Airspace).
 2. **Paper 2**: *"Full Quaternion Based Attitude Control for a Quadrotor"* (Singularity-Free Quaternion $P^2$ Attitude Control Law + '+' Motor Allocation Matrix + 6-DOF Rigid-Body Dynamics).
 
+> **How "Gazebo" is used here.** Flight dynamics (6-DOF rigid body, RK4 at 500 Hz, motor mixing, wind)
+> are computed by a Python engine (`GazeboFallbackEngine` in `src/gazebo_env.py`). The package
+> generates Gazebo SDF worlds (obstacles + `models/quadrotor`) and, if `gz sim` / `ign gazebo` is
+> installed, `GazeboEnvironment.launch()` opens that world (`--gui` for the window, headless otherwise;
+> `GZ_SIM_RESOURCE_PATH` is set automatically). State and control are **not** exchanged with the native
+> Gazebo process, so it is a world viewer, not a co-simulation. The engine reports obstacle and ground
+> contacts (`collided`, `first_collision`, `ground_contact_steps`).
+>
+> The mission planner (`src/path_utils.py`) enforces a 15 m altitude floor and retries with denser
+> A* waypoints until the smoothed spline is obstacle-free, because the shared smoother is not collision-aware.
+> Reference timing is arc-length based and decelerates to stop at the goal.
+
 ---
 
 ## 📁 Directory Structure
@@ -25,7 +37,8 @@ gazebo/
 │   ├── quaternion_math.py              # Hamilton quaternion algebra, Shepperd algorithm, and metrics
 │   ├── motor_model.py                  # '+' quadrotor 4-rotor allocation and saturation matrix
 │   ├── wind_model.py                   # Aerodynamic drag and sinusoidal wind gust disturbance model
-│   ├── gazebo_env.py                   # World generator from Environment3D & Gazebo launcher/fallback
+│   ├── gazebo_env.py                   # SDF world generator, Gazebo launcher, Python 6-DOF engine w/ contact detection
+│   ├── path_utils.py                   # Collision-checked smoothing + arc-length speed profile
 │   ├── quadrotor_gazebo.py             # 6-DOF Gazebo quadrotor body wrapper & actuator interface
 │   └── trajectory_tracker.py           # Outer position PD + Inner Quaternion P² guidance tracker
 ├── output_plots/                       # Telemetry plots & generated figures
@@ -42,7 +55,7 @@ gazebo/
 - **Arm Length**: $d = 0.23\text{ m}$
 - **Physics Timestep**: $\Delta t = 0.002\text{ s}$ ($500\text{ Hz}$)
 - **Attitude Controller Gains**: $P_q = 20.0, P_w = 4.0$ (Paper 2)
-- **Torque Bounds**: $\pm 4.0\text{ N}\cdot\text{m}$
+- **Torque Bounds**: $\pm 4.0\text{ N}\cdot\text{m}$ for the Paper 2 benchmarks; the mission tracker (`run_simulation.py`) uses $\pm 1.0\text{ N}\cdot\text{m}$
 - **Position Controller Gains**: $K_{p,pos} = [1.5, 1.5, 3.0], K_{d,pos} = [1.8, 1.8, 2.5]$
 
 ---
@@ -53,7 +66,7 @@ gazebo/
 Runs tests verifying quaternion math, Shepperd algorithm, motor allocation matrix, SDF world generation, hover equilibrium, and trajectory tracking:
 
 ```bash
-python3 -m unittest gazebo/tests/test_gazebo_sim.py
+python3 -m pytest gazebo/tests -v
 ```
 
 ---
@@ -65,7 +78,9 @@ Runs 3D A* planning, 3-Stage GA Adaptive B-Spline path smoothing, exports the ob
 # Standard Simulation Run
 python3 gazebo/run_simulation.py
 
-# Visual 3D GUI Mode (when native Gazebo is installed)
+# Options: --speed 25 --seed 42 --duration <s> --motor-lag
+
+# Open the generated world in the Gazebo GUI (when `gz` / `ign` is installed)
 python3 gazebo/run_simulation.py --gui
 
 # Enable Wind & Gust Disturbances

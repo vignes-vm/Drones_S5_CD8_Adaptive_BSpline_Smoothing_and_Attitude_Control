@@ -18,6 +18,7 @@ from gazebo.src.wind_model import WindDisturbanceModel
 from gazebo.src.gazebo_env import GazeboEnvironment, generate_gazebo_world_sdf
 from gazebo.src.quadrotor_gazebo import GazeboQuadrotor
 from gazebo.src.trajectory_tracker import GazeboTrajectoryTracker
+from gazebo.src.path_utils import count_obstacle_hits, ArcLengthProfile
 
 
 class TestGazeboQuaternionMath(unittest.TestCase):
@@ -192,6 +193,64 @@ class TestGazeboTrajectoryTracker(unittest.TestCase):
         self.assertGreater(tau[0], 0.0)
         # Torque saturation limit must be respected
         self.assertLessEqual(np.max(np.abs(tau)), self.tracker.tau_limit)
+
+
+class TestContactDetectionAndLaunch(unittest.TestCase):
+
+    def _env_with_tower(self):
+        env_3d = Environment3D()
+        env_3d.obstacles = []
+        from environment.obstacles import Obstacle3D
+        env_3d.obstacles.append(Obstacle3D('cylinder', [100.0, 100.0, 50.0], [10.0, 100.0]))
+        return env_3d
+
+    def test_obstacle_collision_detected(self):
+        env = GazeboEnvironment(environment_3d=self._env_with_tower(), world_sdf_path=os.devnull, dt=0.002)
+        engine = env.fallback
+        engine.reset(position=[100.0, 100.0, 50.0])
+        engine.step(9.81, np.zeros(3))
+        self.assertTrue(engine.collided)
+        self.assertEqual(engine.first_collision[1], 0)
+
+    def test_no_collision_outside_obstacle(self):
+        env = GazeboEnvironment(environment_3d=self._env_with_tower(), world_sdf_path=os.devnull, dt=0.002)
+        engine = env.fallback
+        engine.reset(position=[300.0, 300.0, 50.0])
+        engine.step(9.81, np.zeros(3))
+        self.assertFalse(engine.collided)
+
+    def test_count_obstacle_hits_clearance(self):
+        env_3d = self._env_with_tower()
+        pts = [[112.0, 100.0, 50.0]]  # 2 m outside the 10 m radius
+        self.assertEqual(count_obstacle_hits(env_3d, pts, clearance=0.0), 0)
+        self.assertEqual(count_obstacle_hits(env_3d, pts, clearance=3.0), 1)
+
+    def test_launch_without_native_gazebo_returns_false(self):
+        env = GazeboEnvironment(dt=0.002)
+        if not env.has_gz:
+            self.assertFalse(env.launch())
+
+    def test_motor_lag_delays_thrust(self):
+        drone = GazeboQuadrotor(GazeboEnvironment(dt=0.002), start_position=(0, 0, 10),
+                                enable_motor_lag=True)
+        drone.step(20.0, np.zeros(3))
+        self.assertLess(drone.applied_thrust, 20.0)
+        self.assertGreater(drone.applied_thrust, drone.mass * drone.g)
+
+
+class TestArcLengthProfile(unittest.TestCase):
+
+    class _Line:
+        def evaluate(self, u):
+            return np.array([1000.0 * u, 0.0, 10.0])
+
+    def test_profile_stops_at_end(self):
+        prof = ArcLengthProfile(self._Line(), cruise_speed=25.0, decel=2.0)
+        self.assertAlmostEqual(prof.length, 999.0, delta=1.0)
+        self.assertAlmostEqual(prof.speed_at(0.0), 25.0)
+        self.assertAlmostEqual(prof.speed_at(prof.length), 0.0)
+        self.assertLess(prof.speed_at(prof.length - 10.0), 25.0)
+        self.assertAlmostEqual(prof.u_at(prof.length / 2), 0.4995, delta=0.01)
 
 
 if __name__ == '__main__':

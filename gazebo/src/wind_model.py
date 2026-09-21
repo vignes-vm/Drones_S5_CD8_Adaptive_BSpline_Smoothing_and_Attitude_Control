@@ -8,12 +8,12 @@ import numpy as np
 class WindDisturbanceModel:
 
     def __init__(self, steady_wind=(2.0, 1.0, 0.0), gust_amplitude=(1.5, 1.5, 0.5),
-                 gust_frequency=(0.3, 0.2, 0.5), cd_lin=0.15, cd_rot=0.01):
+                 gust_frequency=(0.3, 0.2, 0.5), cd_lin=0.01, cd_rot=0.01):
         """
         steady_wind: Constant wind velocity in world frame [m/s]
         gust_amplitude: Amplitude of sinusoidal gust oscillations [m/s]
         gust_frequency: Frequency of sinusoidal gusts [Hz]
-        cd_lin: Quadratic aerodynamic linear drag coefficient [kg/m]
+        cd_lin: Quadratic drag coefficient [kg/m] (0.01 -> ~6 N at 25 m/s, within a 1 kg quad's thrust)
         cd_rot: Rotational aerodynamic damping coefficient [N*m*s/rad]
         """
         self.steady_wind = np.array(steady_wind, dtype=float)

@@ -31,18 +31,23 @@ from gazebo.src.quadrotor_gazebo import GazeboQuadrotor
 from gazebo.src.trajectory_tracker import GazeboTrajectoryTracker
 from gazebo.src.quaternion_math import QuaternionMath
 from gazebo.src.wind_model import WindDisturbanceModel
+from gazebo.src.path_utils import plan_safe_path, ArcLengthProfile
 
 
 def parse_args():
     parser = argparse.ArgumentParser(description="Integrated Gazebo UAV Simulation")
     parser.add_argument('--gui', action='store_true', help="Launch Gazebo with 3D GUI window")
     parser.add_argument('--seed', type=int, default=42, help="Obstacle random seed")
-    parser.add_argument('--duration', type=float, default=25.0, help="Simulation duration (seconds)")
+    parser.add_argument('--duration', type=float, default=None,
+                        help="Simulation duration in seconds (default: path length / speed + settling time)")
+    parser.add_argument('--speed', type=float, default=25.0, help="Cruise speed (m/s)")
+    parser.add_argument('--motor-lag', action='store_true', help="Enable first-order motor lag")
     parser.add_argument('--wind', action='store_true', help="Enable wind & gust disturbances")
     return parser.parse_args()
 
 
-def run_integrated_gazebo_simulation(gui=False, seed=42, duration=25.0, enable_wind=False):
+def run_integrated_gazebo_simulation(gui=False, seed=42, duration=None, enable_wind=False,
+                                     flight_speed=25.0, motor_lag=False):
     print("=" * 70, flush=True)
     print("INTEGRATED UAV NAVIGATION & CONTROL IN GAZEBO PHYSICS", flush=True)
     print("Paper 1 (A* + Adaptive B-Spline) -> Paper 2 (Quaternion P^2 Control)", flush=True)
@@ -58,71 +63,71 @@ def run_integrated_gazebo_simulation(gui=False, seed=42, duration=25.0, enable_w
     print(f"  Start: {env_3d.start} | Goal: {env_3d.goal}", flush=True)
     print(f"  Obstacles placed: {len(env_3d.obstacles)} (seed={seed})", flush=True)
 
-    # Export Gazebo SDF World
-    world_sdf = os.path.join(os.path.dirname(__file__), 'worlds', 'airspace_world.sdf')
-    generate_gazebo_world_sdf(env_3d, world_sdf, world_name="airspace_world")
-    print(f"  Exported Gazebo SDF World -> {world_sdf}", flush=True)
-
-    # ── Stage 2: Global Path Planning (A*) ──
-    print("\n[Stage 2] Running 3D A* Search on 26-connected Voxel Grid...", flush=True)
+    # ── Stage 2 & 3: A* + collision-checked Adaptive B-Spline ──
+    print("\n[Stage 2-3] 3D A* (26-connected) + 3-Stage GA Adaptive B-Spline Smoothing...", flush=True)
     astar = AStarPlanner3D(env_3d, grid_resolution=50)
-    raw_wp = np.array(astar.plan(env_3d.start, env_3d.goal))
-    baseline_wp = np.array(astar.smooth_waypoints(raw_wp, min_distance=100))
-    raw_length = astar.compute_path_length(baseline_wp)
-    print(f"  Raw grid cells: {len(raw_wp)} -> Pruned waypoints: {len(baseline_wp)} | Length: {raw_length:.1f}m", flush=True)
-
-    # ── Stage 3: Adaptive B-Spline Path Smoothing ──
-    print("\n[Stage 3] Applying 3-Stage GA Adaptive B-Spline Smoothing...", flush=True)
-    smoother = AdaptiveBSplineSmoother(
-        n_inner_knots=6, n_generations=20, population_size=15, kappa_max=0.5
+    baseline_wp, spline, report = plan_safe_path(
+        env_3d, astar,
+        lambda: AdaptiveBSplineSmoother(n_inner_knots=6, n_generations=20,
+                                        population_size=15, kappa_max=0.5),
+        min_altitude=15.0
     )
-    spline = smoother.smooth(baseline_wp, verbose=False)
+    raw_length = astar.compute_path_length(baseline_wp)
     spline_length = spline.path_length()
     spline_kappa = spline.max_curvature()
-    print(f"  Smoothed Length: {spline_length:.1f} m ({(raw_length - spline_length)/raw_length*100:.1f}% reduction)", flush=True)
-    print(f"  Max Curvature κ_max: {spline_kappa:.4f} m⁻¹ (limit=0.5)", flush=True)
+    print(f"  Baseline length: {raw_length:.1f} m | Smoothed length: {spline_length:.1f} m", flush=True)
+    print(f"  Max Curvature κ_max: {spline_kappa:.4f} m⁻¹ (limit=0.5) | "
+          f"min altitude {report['min_z']:.1f} m | obstacle hits {report['hits']}", flush=True)
 
     # Sample spline path
     spline_pts = spline.sample_path(300)
 
     # ── Stage 4: Gazebo Environment & Quadrotor Setup ──
-    print("\n[Stage 4] Initializing Gazebo Physics Engine...", flush=True)
+    print("\n[Stage 4] Initializing 6-DOF Physics Engine (native Gazebo is view-only)...", flush=True)
     dt_sim = 0.002  # 500 Hz physics rate
-    gazebo_env = GazeboEnvironment(world_sdf_path=world_sdf, environment_3d=env_3d, gui=gui, dt=dt_sim)
-    gazebo_env.launch()
 
-    # Align initial drone pose with path start
-    pos_start = spline.evaluate(0.001)
+    profile = ArcLengthProfile(spline, cruise_speed=flight_speed)
+    pos_start = spline.evaluate(0.0)
     tangent_start = spline.evaluate_derivative(0.001, 1)
     norm_t0 = np.linalg.norm(tangent_start)
     tan_dir0 = tangent_start / norm_t0 if norm_t0 > 1e-4 else np.array([1.0, 0.0, 0.0])
     yaw_start = np.arctan2(tan_dir0[1], tan_dir0[0])
 
+    # Export Gazebo SDF world with the drone spawned at the path start
+    world_sdf = os.path.join(os.path.dirname(__file__), 'worlds', 'airspace_world.sdf')
+    generate_gazebo_world_sdf(env_3d, world_sdf, world_name="airspace_world", start_position=pos_start)
+    print(f"  Exported Gazebo SDF World -> {world_sdf}", flush=True)
+
+    gazebo_env = GazeboEnvironment(world_sdf_path=world_sdf, environment_3d=env_3d, gui=gui, dt=dt_sim)
+    gazebo_env.launch()
+
     drone = GazeboQuadrotor(
         gazebo_environment=gazebo_env,
         start_position=pos_start,
         start_orientation_euler=[0.0, 0.0, yaw_start],
-        enable_motor_model=True
+        enable_motor_model=True,
+        enable_motor_lag=motor_lag
     )
-    drone.velocity = flight_speed * tan_dir0 if 'flight_speed' in locals() else 25.0 * tan_dir0
+    drone.velocity = profile.speed_at(0.0) * tan_dir0
+    gazebo_env.fallback.velocity = drone.velocity.copy()
 
     tracker = GazeboTrajectoryTracker(
         mass=drone.mass, g=drone.g, Pq=2.5, Pw=0.08, tau_limit=1.0,
         Kp_pos=[1.2, 1.2, 2.5], Kd_pos=[1.5, 1.5, 2.0]
     )
 
-    converter = TrajectoryConverter()
     wind_model = WindDisturbanceModel() if enable_wind else None
     if enable_wind:
         print("  Wind & Gust Disturbances: ENABLED", flush=True)
+    if motor_lag:
+        print("  Motor first-order lag: ENABLED", flush=True)
 
     # ── Stage 5: Closed-Loop Guidance & Flight Tracking ──
-    flight_speed = 25.0  # Cruise speed m/s
-    sim_duration = (spline_length / flight_speed) + 5.0 if duration is None or duration <= 30.0 else duration
-    print(f"\n[Stage 5] Executing Full Trajectory Flight Simulation for {sim_duration:.1f}s at {flight_speed} m/s (500 Hz)...", flush=True)
+    settle_time = 10.0  # extra time to stop and settle at the goal
+    sim_duration = duration if duration is not None else (profile.length / flight_speed + settle_time + flight_speed / profile.decel)
+    print(f"\n[Stage 5] Flying {profile.length:.0f} m path for {sim_duration:.1f}s at {flight_speed} m/s (500 Hz)...", flush=True)
     total_steps = int(sim_duration / dt_sim)
-    u_current = 0.001
-    dt_u = (flight_speed / max(1.0, spline_length)) * dt_sim
+    s_travelled = 0.0
 
     # Telemetry logging arrays
     t_log = np.zeros(total_steps)
@@ -140,13 +145,15 @@ def run_integrated_gazebo_simulation(gui=False, seed=42, duration=25.0, enable_w
     for step in range(total_steps):
         t = step * dt_sim
 
-        # 1. Target state from spline
+        # 1. Target state from spline (arc-length parameterised, stops at the goal)
+        u_current = profile.u_at(s_travelled)
+        v_ref = profile.speed_at(s_travelled)
         pos_target = spline.evaluate(u_current)
         tangent = spline.evaluate_derivative(u_current, 1)
         norm_tan = np.linalg.norm(tangent)
         tangent_dir = tangent / norm_tan if norm_tan > 1e-4 else np.array([1.0, 0.0, 0.0])
 
-        vel_target = flight_speed * tangent_dir
+        vel_target = v_ref * tangent_dir
         yaw_target = np.arctan2(tangent_dir[1], tangent_dir[0])
 
         # 2. Wind disturbances
@@ -174,8 +181,7 @@ def run_integrated_gazebo_simulation(gui=False, seed=42, duration=25.0, enable_w
         pos_err = np.linalg.norm(pos_target - drone.position)
         att_err = np.linalg.norm(axis_err)
 
-        if u_current < 0.999:
-            u_current = min(u_current + dt_u, 0.999)
+        s_travelled = min(s_travelled + v_ref * dt_sim, profile.length)
 
         # 6. Record Telemetry
         t_log[step] = t
@@ -190,13 +196,19 @@ def run_integrated_gazebo_simulation(gui=False, seed=42, duration=25.0, enable_w
         err_att_log[step] = att_err
         motor_thrusts_log[step] = drone.motor_thrusts.copy()
 
-        if step % (total_steps // 10) == 0:
+        if step % max(1, total_steps // 10) == 0:
             pct = 100 * step // total_steps
             print(f"  {pct:3d}% | t={t:5.1f}s | u={u_current:.3f} | "
                   f"PosErr={pos_err:5.1f}m | AttErr={att_err:.4f} | "
                   f"Pos=[{drone.position[0]:.0f}, {drone.position[1]:.0f}, {drone.position[2]:.0f}]m", flush=True)
 
-    print(f"\n[Simulation Complete] Final Path Progress: {u_current*100:.1f}% in {duration}s", flush=True)
+    final_err = float(np.linalg.norm(env_3d.goal - drone.position))
+    fb = gazebo_env.fallback
+    print(f"\n[Simulation Complete] Path progress {100 * s_travelled / profile.length:.1f}% in {sim_duration:.1f}s | "
+          f"final distance to goal {final_err:.1f} m", flush=True)
+    print(f"  Obstacle contacts: {fb.collision_count} steps"
+          + (f" (first at t={fb.first_collision[0]:.1f}s, obstacle {fb.first_collision[1]})" if fb.collided else "")
+          + f" | ground-contact steps: {fb.ground_contact_steps}", flush=True)
     gazebo_env.close()
 
     # ── Stage 6: Generate Visualization Artifacts ──
@@ -208,7 +220,7 @@ def run_integrated_gazebo_simulation(gui=False, seed=42, duration=25.0, enable_w
     env_3d.visualize(ax)
     ax.plot(baseline_wp[:, 0], baseline_wp[:, 1], baseline_wp[:, 2], 'k:', lw=1.2, label='A* Waypoints')
     ax.plot(spline_pts[:, 0], spline_pts[:, 1], spline_pts[:, 2], 'b--', lw=1.5, label='B-Spline Reference')
-    ax.plot(pos_actual_log[:, 0], pos_actual_log[:, 1], pos_actual_log[:, 2], 'r-', lw=2.5, label='Gazebo Quadrotor Trajectory')
+    ax.plot(pos_actual_log[:, 0], pos_actual_log[:, 1], pos_actual_log[:, 2], 'r-', lw=2.5, label='Simulated Quadrotor Trajectory')
     ax.scatter(env_3d.start[0], env_3d.start[1], env_3d.start[2], c='green', s=100, label='Start')
     ax.scatter(env_3d.goal[0], env_3d.goal[1], env_3d.goal[2], c='gold', s=100, label='Goal')
     ax.set_title('Gazebo 3D UAV Flight in Cluttered Airspace', fontsize=13, fontweight='bold')
@@ -224,7 +236,7 @@ def run_integrated_gazebo_simulation(gui=False, seed=42, duration=25.0, enable_w
     coords = ['X (m)', 'Y (m)', 'Z (m)']
     for i in range(3):
         axes[i].plot(t_log, pos_target_log[:, i], 'k--', lw=1.5, label='Reference')
-        axes[i].plot(t_log, pos_actual_log[:, i], 'r-', lw=1.5, label='Gazebo Actual')
+        axes[i].plot(t_log, pos_actual_log[:, i], 'r-', lw=1.5, label='Actual')
         axes[i].set_ylabel(coords[i], fontsize=10)
         axes[i].grid(True, alpha=0.3)
         if i == 0:
@@ -251,8 +263,8 @@ def run_integrated_gazebo_simulation(gui=False, seed=42, duration=25.0, enable_w
             axes[0, i].legend()
 
         axes[1, i].plot(t_log, torque_log[:, i], 'r-', lw=1.2)
-        axes[1, i].axhline(4.0, color='gray', linestyle=':')
-        axes[1, i].axhline(-4.0, color='gray', linestyle=':')
+        axes[1, i].axhline(tracker.tau_limit, color='gray', linestyle=':')
+        axes[1, i].axhline(-tracker.tau_limit, color='gray', linestyle=':')
         axes[1, i].set_ylabel(torque_names[i])
         axes[1, i].set_xlabel('Time (s)')
         axes[1, i].grid(True, alpha=0.3)
@@ -296,5 +308,7 @@ if __name__ == '__main__':
         gui=args.gui,
         seed=args.seed,
         duration=args.duration,
-        enable_wind=args.wind
+        enable_wind=args.wind,
+        flight_speed=args.speed,
+        motor_lag=args.motor_lag
     )

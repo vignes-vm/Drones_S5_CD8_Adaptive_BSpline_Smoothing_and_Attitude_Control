@@ -11,7 +11,8 @@ from .motor_model import MotorModel
 class GazeboQuadrotor:
 
     def __init__(self, gazebo_environment=None, start_position=(0.0, 0.0, 1.0),
-                 start_orientation_euler=(0.0, 0.0, 0.0), enable_motor_model=True):
+                 start_orientation_euler=(0.0, 0.0, 0.0), enable_motor_model=True,
+                 enable_motor_lag=False):
         """
         Quadrotor matching Paper 2 physical properties:
         mass = 1.0 kg
@@ -31,6 +32,8 @@ class GazeboQuadrotor:
         self.inv_inertia = np.linalg.inv(self.inertia)
 
         self.enable_motor_model = enable_motor_model
+        # First-order motor lag (MotorModel.tau_motor); only applies with the motor model
+        self.enable_motor_lag = enable_motor_lag and enable_motor_model
         self.motor_model = MotorModel(d=self.d)
 
         self.start_pos = np.array(start_position, dtype=float)
@@ -62,6 +65,8 @@ class GazeboQuadrotor:
         self.omega = np.zeros(3, dtype=float)
         self.applied_thrust = 0.0
         self.applied_torques = np.zeros(3, dtype=float)
+        # Motors start spun up at hover thrust so the lag model has no cold-start transient
+        self.motor_model.current_thrusts = np.full(4, self.mass * self.g / 4.0)
 
         if self.env and self.env.fallback:
             self.env.fallback.reset(self.position, self.q)
@@ -81,6 +86,10 @@ class GazeboQuadrotor:
             actual_thrust, actual_torques, motor_thrusts = self.motor_model.allocate(
                 total_thrust_cmd, torques_cmd
             )
+            if self.enable_motor_lag:
+                motor_thrusts = self.motor_model.step_motor_dynamics(motor_thrusts, self.dt)
+                achieved = self.motor_model.B @ motor_thrusts
+                actual_thrust, actual_torques = achieved[0], achieved[1:4]
             self.motor_thrusts = motor_thrusts
             self.is_saturated = self.motor_model.is_saturated
         else:

@@ -2,7 +2,11 @@
 Gazebo Environment Manager & World Generator.
 Procedurally converts Environment3D (cylinders & cuboids) into Gazebo SDF worlds,
 manages native Gazebo process launching (when installed), and provides a
-high-fidelity 6-DOF Gazebo-conformant simulation engine fallback.
+6-DOF rigid-body simulation engine (RK4, obstacle and ground contact detection).
+
+NOTE: All flight dynamics are computed by GazeboFallbackEngine in Python. The native
+Gazebo process (if launched) only loads the generated world for visualisation; state
+and control are not exchanged with it.
 """
 import os
 import shutil
@@ -11,10 +15,19 @@ import numpy as np
 from .quaternion_math import QuaternionMath
 
 
-def generate_gazebo_world_sdf(environment_3d, output_path, world_name="drone_airspace"):
+MODELS_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "models"))
+
+
+def generate_gazebo_world_sdf(environment_3d, output_path, world_name="drone_airspace",
+                              start_position=None):
     """
     Generates a full Gazebo SDF 1.8 world file populated with obstacles from Environment3D.
+    The quadrotor is spawned at start_position (defaults to environment_3d.start).
+    Requires GZ_SIM_RESOURCE_PATH to include gazebo/models so model://quadrotor resolves
+    (GazeboEnvironment.launch sets this automatically).
     """
+    if start_position is None:
+        start_position = environment_3d.start
     obstacles_xml = []
     for idx, obs in enumerate(environment_3d.obstacles):
         pos = obs.position
@@ -103,7 +116,7 @@ def generate_gazebo_world_sdf(environment_3d, output_path, world_name="drone_air
     <include>
       <uri>model://quadrotor</uri>
       <name>quadrotor</name>
-      <pose>{environment_3d.start[0]} {environment_3d.start[1]} {environment_3d.start[2]} 0 0 0</pose>
+      <pose>{start_position[0]:.2f} {start_position[1]:.2f} {start_position[2]:.2f} 0 0 0</pose>
     </include>
   </world>
 </sdf>
@@ -116,14 +129,21 @@ def generate_gazebo_world_sdf(environment_3d, output_path, world_name="drone_air
 
 class GazeboFallbackEngine:
     """
-    Gazebo-conformant 6-DOF physics engine with collision checking
-    and RK4 numerical integration for systems where native Gazebo is unavailable.
+    6-DOF rigid-body physics engine (RK4) with obstacle and ground contact detection.
+    This is the engine that actually produces the flight dynamics; native Gazebo is not
+    coupled to it.
     """
 
     def __init__(self, environment_3d=None, dt=0.002):
         self.env_3d = environment_3d
         self.dt = dt
         self.time = 0.0
+
+        # Contact reporting (detection only; dynamics are not altered by obstacle hits)
+        self.collided = False
+        self.collision_count = 0
+        self.first_collision = None   # (time, obstacle_index, position)
+        self.ground_contact_steps = 0
 
         # State: position, velocity, orientation [w,x,y,z], angular velocity [p,q,r]
         self.position = np.array([0.0, 0.0, 1.0], dtype=float)
@@ -148,6 +168,25 @@ class GazeboFallbackEngine:
         self.velocity = np.zeros(3, dtype=float)
         self.omega = np.zeros(3, dtype=float)
         self.time = 0.0
+        self.collided = False
+        self.collision_count = 0
+        self.first_collision = None
+        self.ground_contact_steps = 0
+
+    def _find_obstacle_hit(self, point):
+        """Returns the index of the obstacle containing point (no safety buffer), else None."""
+        if self.env_3d is None:
+            return None
+        for idx, obs in enumerate(self.env_3d.obstacles):
+            delta = point - obs.position
+            if obs.shape == 'cylinder':
+                radius, height = obs.dimensions
+                hit = np.hypot(delta[0], delta[1]) <= radius and abs(delta[2]) <= height / 2.0
+            else:
+                hit = bool(np.all(np.abs(delta) <= obs.dimensions / 2.0))
+            if hit:
+                return idx
+        return None
 
     def step(self, total_thrust, torques_body, wind_force_world=None, wind_torque_body=None):
         """
@@ -212,10 +251,20 @@ class GazeboFallbackEngine:
         self.omega += (dt / 6.0) * (w_dot1 + 2.0*w_dot2 + 2.0*w_dot3 + w_dot4)
         self.time += dt
 
-        # Ground collision constraint
+        # Ground contact constraint
         if self.position[2] < 0.0:
             self.position[2] = 0.0
             self.velocity[2] = max(0.0, self.velocity[2])
+        if self.position[2] <= 0.0:
+            self.ground_contact_steps += 1
+
+        # Obstacle contact detection
+        hit = self._find_obstacle_hit(self.position)
+        if hit is not None:
+            self.collided = True
+            self.collision_count += 1
+            if self.first_collision is None:
+                self.first_collision = (self.time, hit, self.position.copy())
 
         return self.position.copy(), self.velocity.copy(), self.orientation.copy(), self.omega.copy()
 
@@ -232,9 +281,16 @@ class GazeboEnvironment:
         self.world_path = world_sdf_path
         self.process = None
 
-        # Check native Gazebo CLI availability
-        self.has_gz = shutil.which("gz") is not None or shutil.which("gazebo") is not None or shutil.which("ign") is not None
-        self.cli_name = "gz" if shutil.which("gz") else ("gazebo" if shutil.which("gazebo") else ("ign" if shutil.which("ign") else None))
+        # Native Gazebo CLI: modern `gz sim` (Harmonic+) or `ign gazebo` (Fortress).
+        # Classic `gazebo` cannot load SDF 1.8 / gz-sim plugins, so it is not used.
+        if shutil.which("gz"):
+            self.cli_cmd = ["gz", "sim"]
+        elif shutil.which("ign"):
+            self.cli_cmd = ["ign", "gazebo"]
+        else:
+            self.cli_cmd = None
+        self.has_gz = self.cli_cmd is not None
+        self.cli_name = self.cli_cmd[0] if self.cli_cmd else None
 
         # Always initialize fallback engine for unified access
         self.fallback = GazeboFallbackEngine(environment_3d=self.env_3d, dt=self.dt)
@@ -245,23 +301,37 @@ class GazeboEnvironment:
             self.world_path = generate_gazebo_world_sdf(self.env_3d, default_world)
 
     def launch(self):
-        """Launches native Gazebo if installed, otherwise outputs notification."""
+        """
+        Launches native Gazebo (world visualisation only) if installed. Returns True when a
+        native process was started; otherwise the Python physics engine is used alone.
+        gui=True opens the GUI; gui=False runs headless (server only).
+        """
         if self.has_gz and self.world_path and os.path.exists(self.world_path):
-            cmd = [self.cli_name, "sim", "-r" if not self.gui else "-s", self.world_path]
+            cmd = self.cli_cmd + ["-r"] + ([] if self.gui else ["-s"]) + [self.world_path]
+            env = os.environ.copy()
+            for var in ("GZ_SIM_RESOURCE_PATH", "IGN_GAZEBO_RESOURCE_PATH"):
+                env[var] = os.pathsep.join(filter(None, [MODELS_DIR, env.get(var, "")]))
             try:
-                self.process = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
-                print(f"[Gazebo] Native process launched: {' '.join(cmd)}")
+                self.process = subprocess.Popen(
+                    cmd, env=env, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL
+                )
+                print(f"[Gazebo] Native process launched (world view only): {' '.join(cmd)}")
+                print("[Gazebo] Flight dynamics are computed by the Python 6-DOF engine.")
                 return True
             except Exception as e:
                 print(f"[Gazebo Warning] Could not launch native process: {e}")
                 self.process = None
         else:
-            print("[Gazebo] Using Gazebo-conformant 6-DOF physics engine backend.")
+            print("[Gazebo] Native Gazebo not found; using the Python 6-DOF physics engine.")
         return False
 
     def close(self):
         """Terminates native Gazebo process if active."""
         if self.process is not None:
             self.process.terminate()
-            self.process.wait()
+            try:
+                self.process.wait(timeout=5)
+            except subprocess.TimeoutExpired:
+                self.process.kill()
+                self.process.wait()
             self.process = None
