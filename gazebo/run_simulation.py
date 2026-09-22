@@ -206,6 +206,7 @@ def run_integrated_gazebo_simulation(gui=False, seed=42, duration=None, enable_w
     fb = gazebo_env.fallback
     print(f"\n[Simulation Complete] Path progress {100 * s_travelled / profile.length:.1f}% in {sim_duration:.1f}s | "
           f"final distance to goal {final_err:.1f} m", flush=True)
+    print(f"  Max control torque: {np.abs(torque_log).max(axis=0)} Nm (limit ±{tracker.tau_limit} Nm)", flush=True)
     print(f"  Obstacle contacts: {fb.collision_count} steps"
           + (f" (first at t={fb.first_collision[0]:.1f}s, obstacle {fb.first_collision[1]})" if fb.collided else "")
           + f" | ground-contact steps: {fb.ground_contact_steps}", flush=True)
@@ -214,25 +215,53 @@ def run_integrated_gazebo_simulation(gui=False, seed=42, duration=None, enable_w
     # ── Stage 6: Generate Visualization Artifacts ──
     print("\n[Stage 6] Rendering Telemetry & Comparison Plots...", flush=True)
 
-    # Plot 1: 3D Flight Path & Obstacles
-    fig = plt.figure(figsize=(12, 9))
-    ax = fig.add_subplot(111, projection='3d')
+    # Plot 1: 3D Flight Path (full view) + zoomed top-down view of the worst-tracking segment.
+    # At full 2000 m scale the reference and actual paths sit on top of each other (tracking
+    # error stays under ~5 m out of a ~2800 m flight), so a zoom around the largest error is
+    # shown alongside the full picture to make the (small, real) tracking gap visible.
+    peak_idx = int(np.argmax(err_pos_log))
+    peak_err = float(err_pos_log[peak_idx])
+    half_window = max(50, int(2.0 / dt_sim))  # ~2s of flight either side of the peak
+    lo, hi = max(0, peak_idx - half_window), min(len(t_log), peak_idx + half_window)
+
+    fig = plt.figure(figsize=(15, 7.5))
+    ax = fig.add_subplot(121, projection='3d')
     env_3d.visualize(ax)
     ax.plot(baseline_wp[:, 0], baseline_wp[:, 1], baseline_wp[:, 2], 'k:', lw=1.2, label='A* Waypoints')
     ax.plot(spline_pts[:, 0], spline_pts[:, 1], spline_pts[:, 2], 'b--', lw=1.5, label='B-Spline Reference')
     ax.plot(pos_actual_log[:, 0], pos_actual_log[:, 1], pos_actual_log[:, 2], 'r-', lw=2.5, label='Simulated Quadrotor Trajectory')
     ax.scatter(env_3d.start[0], env_3d.start[1], env_3d.start[2], c='green', s=100, label='Start')
     ax.scatter(env_3d.goal[0], env_3d.goal[1], env_3d.goal[2], c='gold', s=100, label='Goal')
-    ax.set_title('Gazebo 3D UAV Flight in Cluttered Airspace', fontsize=13, fontweight='bold')
-    ax.legend(loc='upper left', fontsize=9)
+    ax.scatter(*pos_actual_log[peak_idx], c='magenta', s=80, marker='x', linewidths=2.5,
+               label=f'Peak error ({peak_err:.1f} m)')
+    ax.set_title('Full Flight (2000+ m airspace)', fontsize=12, fontweight='bold')
+    ax.legend(loc='upper left', fontsize=8)
+
+    ax_zoom = fig.add_subplot(122)
+    ax_zoom.plot(pos_target_log[lo:hi, 0], pos_target_log[lo:hi, 1], 'k--', lw=2.0, label='Reference')
+    ax_zoom.plot(pos_actual_log[lo:hi, 0], pos_actual_log[lo:hi, 1], 'r-', lw=2.0, label='Actual')
+    ax_zoom.scatter(*pos_actual_log[peak_idx, :2], c='magenta', s=90, marker='x', linewidths=2.5, zorder=5)
+    ax_zoom.annotate(f'{peak_err:.1f} m gap\nat t={t_log[peak_idx]:.1f}s',
+                     xy=pos_actual_log[peak_idx, :2], xytext=(15, 15), textcoords='offset points',
+                     fontsize=9, arrowprops=dict(arrowstyle='->', color='magenta'))
+    ax_zoom.set_xlabel('X (m)', fontsize=11)
+    ax_zoom.set_ylabel('Y (m)', fontsize=11)
+    ax_zoom.set_title(f'Zoom: worst-tracking segment (top-down, t={t_log[lo]:.0f}-{t_log[hi-1]:.0f}s)',
+                      fontsize=12, fontweight='bold')
+    ax_zoom.grid(True, alpha=0.3)
+    ax_zoom.legend(fontsize=9)
+    ax_zoom.set_aspect('equal', adjustable='datalim')
+
+    fig.suptitle('Gazebo 3D UAV Flight in Cluttered Airspace', fontsize=13, fontweight='bold')
     p1 = os.path.join(output_dir, 'gazebo_3d_flight.png')
     plt.tight_layout()
     plt.savefig(p1, dpi=150, bbox_inches='tight')
     plt.close()
     print(f"  [Saved] {p1}", flush=True)
 
-    # Plot 2: Position Tracking vs Time
-    fig, axes = plt.subplots(3, 1, figsize=(11, 7), sharex=True)
+    # Plot 2: Position Tracking vs Time + per-axis tracking error (own, auto-scaled axis so the
+    # (small) gap between reference and actual is legible instead of vanishing at the 2000 m scale).
+    fig, axes = plt.subplots(4, 1, figsize=(11, 9), sharex=True)
     coords = ['X (m)', 'Y (m)', 'Z (m)']
     for i in range(3):
         axes[i].plot(t_log, pos_target_log[:, i], 'k--', lw=1.5, label='Reference')
@@ -241,6 +270,14 @@ def run_integrated_gazebo_simulation(gui=False, seed=42, duration=None, enable_w
         axes[i].grid(True, alpha=0.3)
         if i == 0:
             axes[i].legend(loc='upper right')
+
+    err_xyz = pos_actual_log - pos_target_log
+    for i, (name, color) in enumerate(zip(coords, ['tab:blue', 'tab:orange', 'tab:green'])):
+        axes[3].plot(t_log, err_xyz[:, i], color=color, lw=1.2, label=f'{name[0]} error')
+    axes[3].set_ylabel('Tracking Error (m)', fontsize=10)
+    axes[3].grid(True, alpha=0.3)
+    axes[3].legend(loc='upper right', fontsize=8, ncol=3)
+    axes[3].set_title('Per-axis tracking error (zoomed, own scale)', fontsize=10)
     axes[-1].set_xlabel('Time (s)', fontsize=11)
     fig.suptitle('Gazebo 3D Position Tracking Telemetry', fontsize=12, fontweight='bold')
     p2 = os.path.join(output_dir, 'gazebo_position_tracking.png')
@@ -263,8 +300,19 @@ def run_integrated_gazebo_simulation(gui=False, seed=42, duration=None, enable_w
             axes[0, i].legend()
 
         axes[1, i].plot(t_log, torque_log[:, i], 'r-', lw=1.2)
-        axes[1, i].axhline(tracker.tau_limit, color='gray', linestyle=':')
-        axes[1, i].axhline(-tracker.tau_limit, color='gray', linestyle=':')
+        peak_tau = float(np.max(np.abs(torque_log[:, i])))
+        # Auto-scale to the actual commanded torque: with I ~ 1e-3 kg*m^2 the controller only
+        # needs a small fraction of the +-tau_limit saturation bound, which would otherwise
+        # flatten this subplot into an invisible line at 0.
+        margin = max(peak_tau * 1.3, 1e-4)
+        if margin < tracker.tau_limit:
+            axes[1, i].set_ylim(-margin, margin)
+            axes[1, i].text(0.02, 0.95, f'peak {peak_tau:.3f} Nm\n({100*peak_tau/tracker.tau_limit:.1f}% of ±{tracker.tau_limit:.1f} Nm limit)',
+                            transform=axes[1, i].transAxes, fontsize=8, va='top',
+                            bbox=dict(boxstyle='round', fc='white', alpha=0.7))
+        else:
+            axes[1, i].axhline(tracker.tau_limit, color='gray', linestyle=':')
+            axes[1, i].axhline(-tracker.tau_limit, color='gray', linestyle=':')
         axes[1, i].set_ylabel(torque_names[i])
         axes[1, i].set_xlabel('Time (s)')
         axes[1, i].grid(True, alpha=0.3)
