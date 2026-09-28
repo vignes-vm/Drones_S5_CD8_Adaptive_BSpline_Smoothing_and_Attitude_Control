@@ -199,7 +199,7 @@ class ArduPilotBridge:
             yaw, 0.0
         )
 
-    def run_guidance_loop(self, spline_smoother, waypoints, mode="attitude", duration=25.0, dt=0.05, dry_run=False):
+    def run_guidance_loop(self, env, spline_smoother, waypoints, mode="attitude", duration=25.0, dt=0.05, dry_run=False):
         """
         Main execution loop for ArduPilot guidance.
         Generates smooth B-Spline path and streams reference commands to SITL.
@@ -209,6 +209,14 @@ class ArduPilotBridge:
         # 1. Fit B-Spline path
         spline = spline_smoother.smooth(waypoints)
         converter = TrajectoryConverter()
+
+        # Calculate realistic speed progression (e.g. 15 m/s cruise velocity)
+        path_len = spline.path_length()
+        target_velocity = 15.0  # m/s cruise velocity for quadrotor
+        if dry_run:
+            target_velocity = 280.0  # Faster for quick dry-run test
+
+        step_u_increment = (target_velocity * dt) / max(100.0, path_len)
 
         # Logging buffers
         log_t = []
@@ -221,7 +229,7 @@ class ArduPilotBridge:
 
         u = 0.0
         sim_time = 0.0
-        n_steps = int(duration / dt)
+        n_steps = int(duration / dt) if duration > 0 else int((path_len / target_velocity + 10.0) / dt)
 
         # Mock initial quad state for dry-run mode
         mock_q = Quaternion(1.0, 0.0, 0.0, 0.0)
@@ -263,8 +271,8 @@ class ArduPilotBridge:
             err_vec_norm = np.linalg.norm([q_err.q1, q_err.q2, q_err.q3])
 
             # Gate path parameter u based on attitude tracking error
-            if err_vec_norm < self.error_threshold:
-                u = min(1.0, u + self.u_step)
+            if mode == "position" or err_vec_norm < self.error_threshold:
+                u = min(1.0, u + step_u_increment)
 
             # Log metrics
             log_u.append(u)
@@ -279,14 +287,23 @@ class ArduPilotBridge:
                 print(f"  t={t_now:5.1f}s | u={u:5.3f} ({progress:4.1f}%) | AttErr={err_vec_norm:6.4f} | Pos=[{pos_meas[0]:6.1f}, {pos_meas[1]:6.1f}, {pos_meas[2]:6.1f}]m")
 
             if u >= 1.0:
-                print(f"[ArduPilotBridge] Path complete (u=1.0) at t={t_now:.2f}s!")
+                print(f"[ArduPilotBridge] Path complete (u=1.0) at t={t_now:.2f}s! Reached destination goal.")
+                # Hold position at goal for a few seconds to let drone hover at destination
+                if not dry_run and self.master:
+                    print("[ArduPilotBridge] Holding hover at destination goal...")
+                    for _ in range(int(5.0 / dt)):
+                        if mode == "attitude":
+                            self.send_attitude_target(ref_q, thrust=0.50)
+                        else:
+                            self.send_position_target(pos_ref, yaw=ref_q.to_euler()[2])
+                        time.sleep(dt)
                 break
 
         # Plot & Save Execution Summary
-        self.save_plots(log_t, log_u, log_att_err, log_q_ref, log_q_meas, log_pos_ref, log_pos_meas)
+        self.save_plots(env, log_t, log_u, log_att_err, log_q_ref, log_q_meas, log_pos_ref, log_pos_meas)
         print("[ArduPilotBridge] Guidance loop finished successfully.")
 
-    def save_plots(self, log_t, log_u, log_att_err, log_q_ref, log_q_meas, log_pos_ref, log_pos_meas):
+    def save_plots(self, env, log_t, log_u, log_att_err, log_q_ref, log_q_meas, log_pos_ref, log_pos_meas):
         """Generate and save performance tracking plots."""
         os.makedirs("ardupilot/results", exist_ok=True)
         log_t = np.array(log_t)
@@ -295,15 +312,13 @@ class ArduPilotBridge:
         log_q_ref = np.array(log_q_ref)
         log_q_meas = np.array(log_q_meas)
 
-        # Plot 1: 3D Path Tracking
+        # Plot 1: 3D Path Tracking with Buildings & Towers
         fig = plt.figure(figsize=(10, 7))
         ax = fig.add_subplot(111, projection='3d')
-        ax.plot(log_pos_ref[:, 0], log_pos_ref[:, 1], log_pos_ref[:, 2], 'r--', label='B-Spline Reference')
-        ax.plot(log_pos_meas[:, 0], log_pos_meas[:, 1], log_pos_meas[:, 2], 'b-', label='ArduPilot Trajectory')
-        ax.set_xlabel('X (m)')
-        ax.set_ylabel('Y (m)')
-        ax.set_zlabel('Z (m)')
-        ax.set_title('ArduPilot SITL Flight - B-Spline Path Tracking')
+        env.visualize(ax)  # Draw 3D obstacles
+        ax.plot(log_pos_ref[:, 0], log_pos_ref[:, 1], log_pos_ref[:, 2], 'r--', lw=2, label='B-Spline Reference')
+        ax.plot(log_pos_meas[:, 0], log_pos_meas[:, 1], log_pos_meas[:, 2], 'b-', lw=2, label='ArduPilot Trajectory')
+        ax.set_title('ArduPilot SITL Flight - 3D Obstacle Environment & Path Tracking')
         ax.legend()
         plt.tight_layout()
         plt.savefig('ardupilot/results/ardupilot_3d_flight.png', dpi=200)
@@ -329,19 +344,41 @@ class ArduPilotBridge:
         print("Saved plots to ardupilot/results/ directory.")
 
 
+from environment.real_osm_buildings import load_real_world_environment
+
 def main():
     parser = argparse.ArgumentParser(description="ArduPilot SITL MAVLink Companion Bridge")
     parser.add_argument("--connection", type=str, default="udpin:0.0.0.0:14550", help="MAVLink connection string")
     parser.add_argument("--mode", type=str, choices=["attitude", "position"], default="attitude", help="Guidance command mode")
     parser.add_argument("--duration", type=float, default=20.0, help="Simulation duration (s)")
+    parser.add_argument("--n-obstacles", type=int, default=8, help="Number of cylinders and cuboid obstacles")
+    parser.add_argument("--real-osm", action="store_true", help="Load real 3D building footprints from OpenStreetMap (San Francisco)")
+    parser.add_argument("--street-route", action="store_true", help="Fly San Francisco street canyon route (Larkin St to McAllister St)")
     parser.add_argument("--dry-run", action="store_true", help="Run in mock/dry-run mode without live SITL")
     args = parser.parse_args()
 
-    # Build environment & sample path
-    env = Environment3D()
-    planner = AStarPlanner3D(env, grid_resolution=50.0)
-    raw_path = planner.plan(env.start, env.goal)
-    waypoints = planner.smooth_waypoints(raw_path)
+    # Build obstacle environment & sample path
+    if args.real_osm or args.street_route:
+        env = load_real_world_environment(ref_lat=37.7749, ref_lon=-122.4194)
+    else:
+        env = Environment3D()
+        env.add_random_obstacles(n_cylinders=args.n_obstacles, n_cuboids=args.n_obstacles, seed=42)
+
+    if args.street_route:
+        print("[Street Route] Running San Francisco Urban Canyon Mission (Larkin St -> McAllister St)...")
+        waypoints = np.array([
+            [0.0,    0.0,   20.0],  # 10th St & Market St (NEMA / Twitter HQ)
+            [40.0,  120.0,  25.0],  # 10th St & Hayes St
+            [80.0,  260.0,  25.0],  # Larkin St & Grove St
+            [90.0,  400.0,  25.0],  # Larkin St & Fulton St (Civic Center Park)
+            [90.0,  520.0,  25.0],  # Larkin St & McAllister St Corner
+            [220.0, 520.0,  25.0],  # McAllister St & Hyde St Corner
+            [320.0, 520.0,  25.0]   # McAllister St & Golden Gate Ave Goal
+        ])
+    else:
+        planner = AStarPlanner3D(env, grid_resolution=50.0)
+        raw_path = planner.plan(env.start, env.goal)
+        waypoints = planner.smooth_waypoints(raw_path)
 
     smoother = AdaptiveBSplineSmoother(n_inner_knots=6, kappa_max=0.5)
 
@@ -361,7 +398,7 @@ def main():
             bridge.takeoff(20.0)
             time.sleep(2.0)  # Wait briefly for takeoff init
 
-    bridge.run_guidance_loop(smoother, waypoints, mode=args.mode, duration=args.duration, dry_run=args.dry_run)
+    bridge.run_guidance_loop(env, smoother, waypoints, mode=args.mode, duration=args.duration, dry_run=args.dry_run)
 
 
 if __name__ == "__main__":
