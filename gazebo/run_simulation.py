@@ -37,6 +37,13 @@ from gazebo.src.path_utils import plan_safe_path, ArcLengthProfile
 def parse_args():
     parser = argparse.ArgumentParser(description="Integrated Gazebo UAV Simulation")
     parser.add_argument('--gui', action='store_true', help="Launch Gazebo with 3D GUI window")
+    parser.add_argument('--realtime', action='store_true',
+                        help="Stream the flight to the Gazebo GUI live, paced to wall-clock time "
+                             "(implies --gui). Best-effort visual playback via pose teleport, not "
+                             "a physics co-simulation -- see gazebo/README.md.")
+    parser.add_argument('--fps', type=float, default=15.0,
+                        help="Requested pose-stream update rate for --realtime (Hz). Actual rate "
+                             "may be lower, capped by `gz service` round-trip latency.")
     parser.add_argument('--seed', type=int, default=42, help="Obstacle random seed")
     parser.add_argument('--duration', type=float, default=None,
                         help="Simulation duration in seconds (default: path length / speed + settling time)")
@@ -47,7 +54,9 @@ def parse_args():
 
 
 def run_integrated_gazebo_simulation(gui=False, seed=42, duration=None, enable_wind=False,
-                                     flight_speed=25.0, motor_lag=False):
+                                     flight_speed=25.0, motor_lag=False, realtime=False, fps=15.0):
+    if realtime:
+        gui = True
     print("=" * 70, flush=True)
     print("INTEGRATED UAV NAVIGATION & CONTROL IN GAZEBO PHYSICS", flush=True)
     print("Paper 1 (A* + Adaptive B-Spline) -> Paper 2 (Quaternion P^2 Control)", flush=True)
@@ -98,8 +107,12 @@ def run_integrated_gazebo_simulation(gui=False, seed=42, duration=None, enable_w
     generate_gazebo_world_sdf(env_3d, world_sdf, world_name="airspace_world", start_position=pos_start)
     print(f"  Exported Gazebo SDF World -> {world_sdf}", flush=True)
 
-    gazebo_env = GazeboEnvironment(world_sdf_path=world_sdf, environment_3d=env_3d, gui=gui, dt=dt_sim)
-    gazebo_env.launch()
+    gazebo_env = GazeboEnvironment(world_sdf_path=world_sdf, environment_3d=env_3d, gui=gui, dt=dt_sim,
+                                   world_name="airspace_world")
+    gazebo_launched = gazebo_env.launch()
+    if realtime and not gazebo_launched:
+        print("  [Realtime Warning] Native Gazebo did not launch (not installed / no `gz`/`ign` on "
+              "PATH) -- flight will run at full compute speed with no live GUI playback.", flush=True)
 
     drone = GazeboQuadrotor(
         gazebo_environment=gazebo_env,
@@ -128,6 +141,17 @@ def run_integrated_gazebo_simulation(gui=False, seed=42, duration=None, enable_w
     print(f"\n[Stage 5] Flying {profile.length:.0f} m path for {sim_duration:.1f}s at {flight_speed} m/s (500 Hz)...", flush=True)
     total_steps = int(sim_duration / dt_sim)
     s_travelled = 0.0
+
+    # Realtime pose streaming: publish a pose to native Gazebo every `pose_stream_stride`
+    # physics steps, sleeping just before each publish so wall-clock time tracks sim time.
+    # Physics itself still runs at full speed between publishes (500 Hz, unpaced); only the
+    # publish cadence is throttled to wall-clock -- see GazeboEnvironment.set_pose docstring
+    # for why this is a best-effort visual stream, not a physics co-simulation.
+    pose_stream_stride = max(1, int(round(1.0 / (dt_sim * fps))))
+    realtime_wall_start = time.time()
+    if realtime and gazebo_launched:
+        print(f"  Streaming pose to Gazebo GUI at up to {fps:.0f} Hz "
+              f"(every {pose_stream_stride} physics steps), paced to wall-clock time...", flush=True)
 
     # Telemetry logging arrays
     t_log = np.zeros(total_steps)
@@ -196,6 +220,13 @@ def run_integrated_gazebo_simulation(gui=False, seed=42, duration=None, enable_w
         err_att_log[step] = att_err
         motor_thrusts_log[step] = drone.motor_thrusts.copy()
 
+        # 7. Stream pose to the native Gazebo GUI, paced to wall-clock time
+        if realtime and gazebo_launched and step % pose_stream_stride == 0:
+            sleep_for = t - (time.time() - realtime_wall_start)
+            if sleep_for > 0:
+                time.sleep(sleep_for)
+            gazebo_env.set_pose('quadrotor', drone.position, drone.q)
+
         if step % max(1, total_steps // 10) == 0:
             pct = 100 * step // total_steps
             print(f"  {pct:3d}% | t={t:5.1f}s | u={u_current:.3f} | "
@@ -210,6 +241,10 @@ def run_integrated_gazebo_simulation(gui=False, seed=42, duration=None, enable_w
     print(f"  Obstacle contacts: {fb.collision_count} steps"
           + (f" (first at t={fb.first_collision[0]:.1f}s, obstacle {fb.first_collision[1]})" if fb.collided else "")
           + f" | ground-contact steps: {fb.ground_contact_steps}", flush=True)
+    if realtime and gazebo_launched:
+        print("  Holding final pose in the Gazebo GUI for 5s before closing...", flush=True)
+        gazebo_env.set_pose('quadrotor', drone.position, drone.q)
+        time.sleep(5.0)
     gazebo_env.close()
 
     # ── Stage 6: Generate Visualization Artifacts ──
@@ -358,5 +393,7 @@ if __name__ == '__main__':
         duration=args.duration,
         enable_wind=args.wind,
         flight_speed=args.speed,
-        motor_lag=args.motor_lag
+        motor_lag=args.motor_lag,
+        realtime=args.realtime,
+        fps=args.fps
     )

@@ -216,7 +216,7 @@
     <include>
       <uri>model://quadrotor</uri>
       <name>quadrotor</name>
-      <pose>0.14 -0.42 17.59 0 0 0</pose>
+      <pose>0.61 -1.56 17.65 0 0 0</pose>
     </include>
   </world>
 </sdf>
