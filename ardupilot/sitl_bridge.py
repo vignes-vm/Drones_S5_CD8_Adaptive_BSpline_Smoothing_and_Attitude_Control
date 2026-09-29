@@ -344,8 +344,6 @@ class ArduPilotBridge:
         print("Saved plots to ardupilot/results/ directory.")
 
 
-from environment.real_osm_buildings import load_real_world_environment
-
 def main():
     parser = argparse.ArgumentParser(description="ArduPilot SITL MAVLink Companion Bridge")
     parser.add_argument("--connection", type=str, default="udpin:0.0.0.0:14550", help="MAVLink connection string")
@@ -359,6 +357,7 @@ def main():
 
     # Build obstacle environment & sample path
     if args.real_osm or args.street_route:
+        from environment.real_osm_buildings import load_real_world_environment  # optional, not in repo
         env = load_real_world_environment(ref_lat=37.7749, ref_lon=-122.4194)
     else:
         env = Environment3D()
