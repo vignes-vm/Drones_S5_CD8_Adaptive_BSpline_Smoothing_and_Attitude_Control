@@ -274,11 +274,13 @@ class GazeboEnvironment:
     Manages Gazebo simulation environment setup, world generation, and process lifecycle.
     """
 
-    def __init__(self, world_sdf_path=None, environment_3d=None, gui=False, dt=0.002):
+    def __init__(self, world_sdf_path=None, environment_3d=None, gui=False, dt=0.002,
+                 world_name="drone_airspace"):
         self.dt = dt
         self.gui = gui
         self.env_3d = environment_3d
         self.world_path = world_sdf_path
+        self.world_name = world_name
         self.process = None
 
         # Native Gazebo CLI: modern `gz sim` (Harmonic+) or `ign gazebo` (Fortress).
@@ -324,6 +326,38 @@ class GazeboEnvironment:
         else:
             print("[Gazebo] Native Gazebo not found; using the Python 6-DOF physics engine.")
         return False
+
+    def set_pose(self, model_name, position, quaternion):
+        """
+        Teleports `model_name` to `position` (xyz, meters) / `quaternion` ([w, x, y, z], Hamilton)
+        inside the running native Gazebo process, via the `/world/<name>/set_pose` service that
+        the `gz-sim-user-commands-system` plugin exposes (already loaded in every world this
+        module generates). This drives the model's pose directly -- it does not apply forces or
+        velocities in native Gazebo's own physics engine -- so it is a best-effort *visual* pose
+        stream for realtime playback, not a physics co-simulation: the Python 6-DOF engine
+        (GazeboFallbackEngine / GazeboQuadrotor) remains the sole source of truth for dynamics.
+
+        Returns True if the service call round-tripped inside the timeout, else False (native
+        Gazebo not running, or this call was slower than the timeout). A False return is safe to
+        ignore and keep simulating -- the next call simply publishes a newer pose.
+        """
+        if not self.has_gz or self.process is None:
+            return False
+        w, x, y, z = quaternion
+        req = (f'name: "{model_name}" '
+               f'position: {{x: {position[0]:.4f} y: {position[1]:.4f} z: {position[2]:.4f}}} '
+               f'orientation: {{x: {x:.6f} y: {y:.6f} z: {z:.6f} w: {w:.6f}}}')
+        cmd = [self.cli_name, "service",
+               "-s", f"/world/{self.world_name}/set_pose",
+               "--reqtype", "gz.msgs.Pose",
+               "--reptype", "gz.msgs.Boolean",
+               "--timeout", "200",
+               "--req", req]
+        try:
+            subprocess.run(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=0.5)
+            return True
+        except Exception:
+            return False
 
     def close(self):
         """Terminates native Gazebo process if active."""

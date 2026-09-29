@@ -24,6 +24,7 @@ This directory contains the **Gazebo 3D Physics Simulation Stack** integrating b
 gazebo/
 ├── README.md                           # Documentation & execution guide
 ├── run_simulation.py                   # Master integrated mission runner (A* -> GA B-Spline -> Gazebo 6-DOF flight)
+├── view_in_gazebo_gui.py               # Live real-time interactive 3D flight viewer (matplotlib, no native Gazebo needed)
 ├── simulate_paper1.py                  # Paper 1 recreation (4-method smoothing benchmark in Gazebo airspace)
 ├── simulate_paper2.py                  # Paper 2 recreation (Step response, Sinusoidal tracking, 360° Flip)
 ├── models/
@@ -83,9 +84,39 @@ python3 gazebo/run_simulation.py
 # Open the generated world in the Gazebo GUI (when `gz` / `ign` is installed)
 python3 gazebo/run_simulation.py --gui
 
+# Watch the flight live in the Gazebo GUI, paced to wall-clock time
+python3 gazebo/run_simulation.py --realtime
+
 # Enable Wind & Gust Disturbances
 python3 gazebo/run_simulation.py --wind
 ```
+
+#### Live playback in the Gazebo GUI (`--realtime`)
+
+By default the Python 6-DOF engine computes the whole flight in a batch (much faster than real
+time) and `--gui` only shows a **static** world — the quadrotor model doesn't move, since state
+isn't exchanged with native Gazebo (see the note at the top of this file).
+
+`--realtime` (implies `--gui`) changes that: while the flight loop runs, it periodically calls
+`GazeboEnvironment.set_pose()`, which teleports the `quadrotor` model in the running Gazebo
+process to the just-computed position/orientation via the `/world/<name>/set_pose` service
+(provided by the `gz-sim-user-commands-system` plugin, already loaded in every generated world).
+Each publish is paced by sleeping until wall-clock time catches up to simulation time, so you see
+the drone fly the mission in the GUI over roughly the same duration the flight actually takes.
+
+Requires a native Gazebo install (`gz sim`, Harmonic or newer — install via
+`brew tap osrf/simulation && brew install gz-harmonic` on macOS). Notes and caveats:
+
+- **This is a best-effort visual pose stream, not a physics co-simulation.** The model is
+  teleported directly; native Gazebo's own physics engine never applies forces/torques to it, and
+  the Python engine above remains the sole source of truth for the actual flight dynamics and the
+  telemetry plots saved afterward.
+- The requested update rate is set with `--fps` (default 15 Hz). The *achieved* rate is capped by
+  the round-trip latency of each `gz service` call on your machine — if that's slower than the
+  requested interval, playback falls proportionally behind real time (frames are never dropped or
+  reordered, just delayed).
+- If `gz`/`ign` isn't found, `--realtime` prints a warning and the flight still runs (at full
+  compute speed, no GUI playback) rather than failing.
 
 **Generated Artifacts** in `gazebo/output_plots/`:
 - `gazebo_3d_flight.png`: 3D flight trajectory through obstacle field.
@@ -95,7 +126,25 @@ python3 gazebo/run_simulation.py --wind
 
 ---
 
-### 3. Paper 1 Path Smoothing Benchmark
+### 3. Live Real-Time 3D Flight Viewer (no native Gazebo required)
+Opens an interactive matplotlib 3D window and flies the same A* -> Adaptive B-Spline -> quaternion-controlled
+mission live, paced to wall-clock time -- the Gazebo-folder equivalent of `mujoco/view_in_mujoco_gui.py`.
+On reaching the goal it holds briefly, then loops back to the start:
+
+```bash
+python3 gazebo/view_in_gazebo_gui.py
+
+# Options: --seed 42 --speed 25 --fps 30 --hold 3 --wind --motor-lag
+```
+
+- Left-click + drag to orbit the camera, scroll to zoom, close the window to exit.
+- This renders with matplotlib's own 3D window (no `gz sim` install needed) -- the flight dynamics
+  are the same `GazeboFallbackEngine` used everywhere else in this folder, just shown live instead
+  of only saved as PNGs afterward.
+
+---
+
+### 4. Paper 1 Path Smoothing Benchmark
 Recreates Table 2 of Paper 1 in Gazebo airspace across seeded obstacle environments, comparing **Baseline Polyline ($A^*$)**, **Uniform B-Spline**, **Classical Chord B-Spline**, and **Adaptive B-Spline (GA)**:
 
 ```bash
@@ -107,7 +156,7 @@ python3 gazebo/simulate_paper1.py
 
 ---
 
-### 4. Paper 2 Attitude Control Maneuvers Benchmark
+### 5. Paper 2 Attitude Control Maneuvers Benchmark
 Recreates Figures 3 (Step Response), 5 (Sinusoidal Tracking), and 7 (360° Flip Maneuver) using the Quaternion $P^2$ attitude controller:
 
 ```bash
