@@ -9,9 +9,17 @@ import numpy as np
 
 class AStarPlanner3D:
 
-    def __init__(self, environment, grid_resolution=50):
+    def __init__(self, environment, grid_resolution=50,
+                 cruise_altitude=100.0, altitude_weight=2.0):
         self.env        = environment
         self.resolution = grid_resolution
+        # Altitude-holding: penalise flying below cruise_altitude so the path
+        # climbs to cruise and holds it, deviating (horizontally) only to route
+        # around obstacles. Without this, pure-distance A* crawls along ground
+        # layer 0. Tune cruise_altitude (m) and altitude_weight (penalty per
+        # metre below cruise, relative to the ~grid_resolution step cost).
+        self.cruise_altitude = cruise_altitude
+        self.altitude_weight = altitude_weight
 
         x_max, y_max, z_max = environment.space
         self.nx = max(1, int(np.ceil(x_max / grid_resolution)))
@@ -87,8 +95,11 @@ class AStarPlanner3D:
                 if not self._is_free(neighbor):
                     continue
 
-                step_cost = np.linalg.norm(
-                    self._grid_to_world(neighbor) - current_world
+                neighbor_world = self._grid_to_world(neighbor)
+                step_cost = np.linalg.norm(neighbor_world - current_world)
+                # cruise-altitude penalty (one-sided: only below cruise)
+                step_cost += self.altitude_weight * max(
+                    0.0, self.cruise_altitude - neighbor_world[2]
                 )
                 tentative_g = g_score[current] + step_cost
 
