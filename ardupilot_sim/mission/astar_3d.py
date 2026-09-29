@@ -14,7 +14,7 @@ from obstacle_env import START, GOAL, SPACE, get_obstacles, in_collision
 
 
 class AStar3D:
-    def __init__(self, resolution=100.0, cruise_altitude=120.0, altitude_weight=1.5):
+    def __init__(self, resolution=50.0, cruise_altitude=70.0, altitude_weight=1.0):
         self.res = resolution
         self.cruise_altitude = cruise_altitude
         self.altitude_weight = altitude_weight
@@ -67,7 +67,10 @@ class AStar3D:
                     continue
                 nb_w = self._to_world(nb)
                 step = np.linalg.norm(nb_w - cur_w)
-                step += self.altitude_weight * max(0.0, self.cruise_altitude - nb_w[2])
+                # two-sided: hold cruise altitude (penalise BOTH above and below),
+                # so the path weaves around towers at cruise instead of overflying;
+                # the mandatory climb to the goal altitude still happens, but late.
+                step += self.altitude_weight * abs(nb_w[2] - self.cruise_altitude)
                 tg = gscore[cur] + step
                 if tg < gscore.get(nb, np.inf):
                     gscore[nb] = tg

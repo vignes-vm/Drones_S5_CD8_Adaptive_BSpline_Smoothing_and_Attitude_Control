@@ -34,14 +34,16 @@ def _corridor_obstacles():
 
     obstacles = []
     # (fraction along path, lateral offset m, radius m, height m)
+    # Small alternating offsets so each tower straddles the direct line and
+    # FORCES the path to weave left/right around it (proper 3D avoidance).
     specs = [
-        (0.14,  160, 45, 240),
-        (0.27, -180, 40, 260),
-        (0.40,  150, 50, 300),
-        (0.53, -160, 42, 280),
-        (0.66,  170, 46, 320),
-        (0.79, -150, 40, 250),
-        (0.90,  120, 48, 300),
+        (0.14,  30, 55, 240),
+        (0.27, -35, 50, 260),
+        (0.40,  25, 60, 300),
+        (0.53, -30, 55, 280),
+        (0.66,  35, 55, 320),
+        (0.79, -25, 50, 250),
+        (0.90,  20, 55, 300),
     ]
     for frac, off, r, h in specs:
         centre = START[:2] + fwd * (frac * length) + perp * off
