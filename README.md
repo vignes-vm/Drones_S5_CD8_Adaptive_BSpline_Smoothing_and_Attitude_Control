@@ -133,7 +133,7 @@ with boundary values $u_0 = 0$ and $u_n = 1$.
 For a cubic B-Spline ($k = 3$), each coordinate of the trajectory is represented as
 
 $$
-C(u) = \sum_{i=0}^{m} d_i\, N_{i,k}(u)
+C(u) = \sum_{i=0}^{m} d_i\ N_{i,k}(u)
 $$
 
 valid over $u_{min} \le u \le u_{max}$ (Eq. 1), where:
@@ -223,7 +223,7 @@ Each GA chromosome encodes a candidate knot vector $U = \{u_0, u_1, \dots, u_{m+
 Control points $d_i$ are recovered for a given knot vector by solving the linear interpolation system built from the basis matrix $N_{i,k}(u_j)$:
 
 $$
-C(u_j) = \sum_{i=0}^{m} N_{i,k}(u_j)\, d_i = p_j
+C(u_j) = \sum_{i=0}^{m} N_{i,k}(u_j)\ d_i = p_j
 $$
 
 for $j = 0,\dots,n$, solved as a least-squares normal-equations system so it degrades gracefully instead of failing on a near-singular basis matrix — this is our least-squares initialization step, applied before the curvature-aware refinement of §4.8.
@@ -261,7 +261,7 @@ The four methods compared: **Baseline Polyline** (raw, unsmoothed A\* output), *
 With $q = [q_0, q_1, q_2, q_3]^T$ the unit attitude quaternion and $\omega$ the body angular rate:
 
 $$
-\dot{q} = \tfrac{1}{2}\, q \otimes (0,\ \omega)
+\dot{q} = \tfrac{1}{2}\ q \otimes (0,\ \omega)
 $$
 
 where $(0,\ \omega)$ denotes the pure quaternion with zero scalar part and vector part $\omega$.
@@ -291,7 +291,7 @@ The scalar part is forced positive (flip sign if $q_{err,0} < 0$) to always take
 ### 5.4 P² control law
 
 $$
-\tau = -P_q\, \vec{q}_{err} - P_\omega\, \omega
+\tau = -P_q\ \vec{q}_{err} - P_\omega\ \omega
 $$
 
 where `q_err` is the vector part of the error quaternion,
