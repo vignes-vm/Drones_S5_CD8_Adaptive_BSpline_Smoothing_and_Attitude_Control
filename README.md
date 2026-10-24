@@ -431,6 +431,15 @@ The full pipeline (3D A\* → GA-adaptive B-Spline → quaternion P² tracking) 
 
 *Figure 16. 360° singularity-free flip maneuver: the unwrapped roll angle tracks the 0°→360° ramp smoothly through q₀ passing through zero (the point a Euler-angle controller would hit gimbal lock), confirming the quaternion formulation remains singularity-free through a full flip.*
 
+![Mujoco Variable Wind Simulation](variable_wind/mujoco/output_plots/mujoco_variable_wind_simulation.png)
+<center>Fig. 17</center>
+
+![Mujoco Variable Wind Simulation](variable_wind/mujoco/output_plots/output.png)
+<center>Fig. 18</center>
+
+*Figure 17,18. Simulation of flight of a P² controlled drone with path planning using Adaptive B-Spline method. The drone is simulated under under a wind vortex, which effects in random wind effect on the drone, simulating real-life environment disturbances of a drone flight.*
+
+
 ## 10. Summary
 
 | Test | Observation |
